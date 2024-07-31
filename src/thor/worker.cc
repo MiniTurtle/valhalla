@@ -152,6 +152,10 @@ thor_worker_t::work(const std::list<zmq::message_t>& job,
         result.messages.emplace_back(serialize_to_pbf(request));
         break;
       }
+      case Options::all_to_all: {
+        result = to_response(all_to_all(request), info, request);
+        break;
+      }
       case Options::trace_route: {
         trace_route(request);
         result.messages.emplace_back(serialize_to_pbf(request));

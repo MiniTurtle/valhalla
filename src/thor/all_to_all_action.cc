@@ -23,16 +23,9 @@ std::string thor_worker_t::all_to_all(Api& request) {
     auto _ = measure_scope_time(request);
 
     auto& options = *request.mutable_options();
-    adjust_scores(options);
+    //adjust_scores(options);
     auto costing = parse_costing(request);
 
-    // Get something we can use to fetch tiles
-    valhalla::baldr::GraphReader reader(config().get_child("mjolnir"));
-
-    boost::property_tree::ptree pt = config();
-
-    // Construct costing
-    CostFactory factory;
 
     // Get type of route - this provides the costing method to use.
     const std::string& routetype = valhalla::Costing_Enum_Name(options.costing_type());
@@ -40,9 +33,13 @@ std::string thor_worker_t::all_to_all(Api& request) {
 
     // Get the costing method - pass the JSON configuration
     sif::TravelMode mode;
+
+    // 
+    // Construct costing
+    CostFactory factory;
     auto mode_costing = factory.CreateModeCosting(options, mode);
 
-    BidirectionalAStar bd(pt.get_child("thor"));
+    BidirectionalAStar& bd = bidir_astar;
 
     cost_ptr_t cost = mode_costing[static_cast<uint32_t>(mode)];
     cost->set_allow_destination_only(false);
@@ -82,30 +79,34 @@ std::string thor_worker_t::all_to_all(Api& request) {
     std::unordered_map<std::pair<uint64_t, uint64_t>, PathData, pair_hash, pair_equal> map;
     bool was_early_exit = false;
 
-    auto callback = [&](const CandidateConnection& begin, const CandidateConnection& end) {
+    uint64_t early_exit_dest_edge = 0;
+    auto callback = [&](const uint64_t& begin, const uint64_t& end) {
         was_early_exit = true;
-        if (!map.empty())
-            for (auto dest_edge : destionation_edges) {
-                std::pair<baldr::GraphId, baldr::GraphId> pair(end.edgeid, dest_edge);
-                auto it = map.find(pair);
-                if (it != map.end())
-                    return true;
-
-            /*    std::pair<baldr::GraphId, baldr::GraphId> pair_reverse(dest_edge, end.edgeid);
-                it = map.find(pair_reverse);
-                if (it != map.end())
-                    return true;*/
-            
-                /*std::pair<baldr::GraphId, baldr::GraphId> pair_op(end.opp_edgeid, dest_edge);
-                it = map.find(pair_op);
-                if (it != map.end())
-                    return true;*/
-
-                /*   std::pair<baldr::GraphId, baldr::GraphId> pair_op_reverse(dest_edge, end.opp_edgeid);
-                it = map.find(pair_op_reverse);
-                if (it != map.end())
-                    return true;*/
+        if (!map.empty()) {
+            //for (auto dest_edge : destionation_edges) {
+            std::pair<uint64_t, uint64_t> pair(begin, end);
+            auto it = map.find(pair);
+            if (it != map.end()) {
+                early_exit_dest_edge = end;
+                return true;
             }
+        }
+
+        /*    std::pair<baldr::GraphId, baldr::GraphId> pair_reverse(dest_edge, end.edgeid);
+            it = map.find(pair_reverse);
+            if (it != map.end())
+                return true;*/
+            
+            /*std::pair<baldr::GraphId, baldr::GraphId> pair_op(end.opp_edgeid, dest_edge);
+            it = map.find(pair_op);
+            if (it != map.end())
+                return true;*/
+
+            /*   std::pair<baldr::GraphId, baldr::GraphId> pair_op_reverse(dest_edge, end.opp_edgeid);
+            it = map.find(pair_op_reverse);
+            if (it != map.end())
+                return true;*/
+            //}
 
         was_early_exit = false;
         return false;
@@ -124,25 +125,28 @@ std::string thor_worker_t::all_to_all(Api& request) {
                 destionation_edges.push_back(edge.graph_id());
             }
 
-            auto paths = bd.GetBestPath(origin, dest, reader, mode_costing, mode, options);
+            bd.Clear();
+            auto paths = bd.GetBestPath(origin, dest, *reader, mode_costing, mode, options);
 
             std::vector<PathData> path_datas;
             path_datas.reserve(paths.size());
             for (auto& path : paths) {
-                PathData data;
-                float& distance = data.path_distance;
-                sif::Cost& cost = data.elapsed_cost;
-                for (auto it = path.begin(); it != path.end(); it++) {
-                    distance += it->path_distance;
-                    cost += it->elapsed_cost;
+		        {
+                    PathData data;
+                    float& distance = data.path_distance;
+                    sif::Cost& cost = data.elapsed_cost;
+                    for (auto it = path.begin(); it != path.end(); it++) {
+                        distance += it->path_distance;
+                        cost += it->elapsed_cost;
+                    }
+                    path_datas.push_back(data);
                 }
-                path_datas.push_back(data);
 
 		        for (size_t path_i = 0; path_i < path.size()-1; path_i++)
 		            for (size_t path_j = path_i+1; path_j < path.size(); path_j++) {
                         auto& p_i = path[path_i];
                         auto& p_j = path[path_j];
-                        //std::vector<PathInfo> insert_path = std::vector<PathInfo>(path.begin()+path_i, path.begin()+path_j+1);
+  
                         PathData data;
                         float& distance = data.path_distance;
                         sif::Cost& cost = data.elapsed_cost;
@@ -152,7 +156,6 @@ std::string thor_worker_t::all_to_all(Api& request) {
                         }
                         
                         map[{p_i.edgeid.value, p_j.edgeid.value}] = data;
-                        //std::reverse(insert_path.begin(), insert_path.end());
                         map[{p_j.edgeid.value, p_i.edgeid.value}] = data;
                     }
                 }
@@ -166,21 +169,13 @@ std::string thor_worker_t::all_to_all(Api& request) {
 
                     PathInfo& path_it = path.back();
 
-                    bool did_find_end_of_path = false;
-                    for (auto& dest_edge : destionation_edges) {
-                        auto it = map.find({path_it.edgeid.value, dest_edge});
-                        if (it == map.end())
-                            continue;
+                    auto it = map.find({path_it.edgeid.value, early_exit_dest_edge});
+                    assert(it != map.end());
 
-                        auto& insert_path_data = it->second;
-                        //path.insert(path.end(), insert_path.begin(), insert_path.end());
-                        path_data.path_distance += insert_path_data.path_distance;
-                        path_data.elapsed_cost += insert_path_data.elapsed_cost;
-                        did_find_end_of_path = true;
-                        break;
-                    }
-
-                    assert(did_find_end_of_path);
+                    auto& insert_path_data = it->second;
+                    //path.insert(path.end(), insert_path.begin(), insert_path.end());
+                    path_data.path_distance += insert_path_data.path_distance;
+                    path_data.elapsed_cost += insert_path_data.elapsed_cost;
                 }
             }
 

@@ -347,6 +347,10 @@ loki_worker_t::work(const std::list<zmq::message_t>& job,
       case Options::centroid:
         route(request);
         result.messages.emplace_back(request.SerializeAsString());
+        break;  
+      case Options::all_to_all:
+        all_to_all(request);
+        result.messages.emplace_back(request.SerializeAsString());
         break;
       case Options::locate:
         result = to_response(locate(request), info, request);

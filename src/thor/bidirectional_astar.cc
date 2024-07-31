@@ -534,6 +534,12 @@ BidirectionalAStar::GetBestPath(valhalla::Location& origin,
   SetOrigin(graphreader, origin, forward_time_info);
   SetDestination(graphreader, destination, reverse_time_info);
 
+  std::vector<uint64_t> dest_edge_ids;
+  dest_edge_ids.reserve(destination.correlation().edges_size());
+  for (auto i = 0; i < destination.correlation().edges_size(); i++) {
+      dest_edge_ids.push_back(destination.correlation().edges(i).graph_id());
+  }
+
   // Update hierarchy limits
   if (!ignore_hierarchy_limits_)
     ModifyHierarchyLimits();
@@ -573,6 +579,18 @@ BidirectionalAStar::GetBestPath(valhalla::Location& origin,
           return FormPath(graphreader, options, origin, destination, forward_time_info);
         }
 
+        //if (callback_should_do_early_exit) {
+        //    uint64_t begin = fwd_pred.edgeid().value;
+        //    for (auto dest_edge_id : dest_edge_ids)
+        //        if (callback_should_do_early_exit(begin, dest_edge_id)) {
+        //            auto ret_path = FormPath(graphreader, options, origin, destination, forward_time_info);
+        //           /* for (auto& path : ret_path)
+        //                if (!path.empty())
+        //                    path.erase(path.end()-1);*/
+        //            return ret_path;
+        //        }
+        //}
+
         // Check if the edge on the forward search connects to a settled edge on the
         // reverse search tree. Do not expand further past this edge since it will just
         // result in other connections. Handle special edge case when we encountered the
@@ -586,6 +604,7 @@ BidirectionalAStar::GetBestPath(valhalla::Location& origin,
             continue;
           }
         }
+
       } else {
         // Search is exhausted. If a connection has been found, return it
         if (!best_connections_.empty()) {
@@ -623,6 +642,18 @@ BidirectionalAStar::GetBestPath(valhalla::Location& origin,
           return FormPath(graphreader, options, origin, destination, forward_time_info);
         }
 
+        //if (callback_should_do_early_exit) {
+        //    uint64_t begin = rev_pred.edgeid().value;
+        //    for (auto dest_edge_id : dest_edge_ids)
+        //        if (callback_should_do_early_exit(begin, dest_edge_id)) {
+        //            auto ret_path = FormPath(graphreader, options, origin, destination, forward_time_info);
+        //           /* for (auto& path : ret_path)
+        //                if (!path.empty())
+        //                    path.erase(path.end()-1);*/
+        //            return ret_path;
+        //        }
+        //}
+
         // Check if the edge on the reverse search connects to a settled edge on the
         // forward search tree. Do not expand further past this edge since it will just
         // result in other connections. Handle special edge case when we encountered the
@@ -659,14 +690,6 @@ BidirectionalAStar::GetBestPath(valhalla::Location& origin,
         LOG_DEBUG("Extending search in forward direction. Origin pruning disabled? " +
                   std::to_string(pruning_disabled_at_origin_));
       }
-    }
-
-    if (callback_should_do_early_exit && !best_connections_.empty() && callback_should_do_early_exit(best_connections_.front(), best_connections_.back())) {
-        auto ret_path = FormPath(graphreader, options, origin, destination, forward_time_info);
-        for (auto& path : ret_path)
-            if (!path.empty())
-                path.erase(path.end()-1);
-        return ret_path;
     }
 
     bool forward_exhausted = forward_pred_idx == kInvalidLabel;

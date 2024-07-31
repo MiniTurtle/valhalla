@@ -41,7 +41,7 @@ struct CandidateConnection {
  */
 class BidirectionalAStar : public PathAlgorithm {
 public:
-  typedef std::function<bool(const CandidateConnection& begin, const CandidateConnection& end)> DELEGATE_EARLY_EXIT;
+  typedef std::function<bool(const uint64_t& begin, const uint64_t& end)> DELEGATE_EARLY_EXIT;
 
   /**
    * Constructor.
