@@ -24,7 +24,7 @@ message Api {
   //TODO: locate
   //TODO: height
   //TODO: expansion
-  AllToAll all_to_all = 6;
+  AllToAll all_to_all = 13;
 
   // here we store a bit of info about what happened during request processing (stats/errors/warnings)
   Info info = 20;

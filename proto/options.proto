@@ -51,12 +51,12 @@ message PbfFieldSelector {
   bool directions = 3; // /route /trace_route /optimized_route /centroid
   bool status = 4;     // /status
   bool matrix = 5;     // sources_to_targets
-  bool all_to_all = 6;     // all_to_all
   // TODO: enable these once we have objects for them
   // bool isochrone = 5;
   // bool locate = 7;
   // bool height = 8;
   // bool expansion = 9;
+  bool all_to_all = 13;     // all_to_all
 }
 
 message AvoidEdge {

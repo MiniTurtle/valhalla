@@ -1,0 +1,1 @@
+-j '{"costing":"auto","directions_options":{"units":"km"}, "locations":[{"lat":61.80762,"lon":22.391},{"lat":61.807215261261,"lon":22.392705943794},{"lat":61.80658,"lon":22.39234},{"lat":61.80789,"lon":22.38953}]}'

@@ -108,6 +108,7 @@ bool Options_Action_Enum_Parse(const std::string& action, Options::Action* a) {
       {"route", Options::route},
       {"locate", Options::locate},
       {"sources_to_targets", Options::sources_to_targets},
+      {"all_to_all", Options::all_to_all},
       {"optimized_route", Options::optimized_route},
       {"isochrone", Options::isochrone},
       {"trace_route", Options::trace_route},
