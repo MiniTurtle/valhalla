@@ -1,6 +1,12 @@
 # editor temporary / backup files
 *~
 
+.clang-format
+vcpkg.json
+valhalla.json
+vcpkg/
+vcpkg_installed/
+
 # built objects
 valhalla_run_map_match
 valhalla_meili_worker

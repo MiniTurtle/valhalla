@@ -90,6 +90,9 @@ int main(int argc, char** argv) {
         case valhalla::Options::sources_to_targets:
           std::cout << actor.matrix(request_str, nullptr, &request) << std::endl;
           break;
+        case valhalla::Options::all_to_all:
+          std::cout << actor.all_to_all(request_str, nullptr, &request) << std::endl;
+          break;
         case valhalla::Options::optimized_route:
           std::cout << actor.optimized_route(request_str, nullptr, &request) << std::endl;
           break;

@@ -661,6 +661,14 @@ BidirectionalAStar::GetBestPath(valhalla::Location& origin,
       }
     }
 
+    if (callback_should_do_early_exit && !best_connections_.empty() && callback_should_do_early_exit(best_connections_.front(), best_connections_.back())) {
+        auto ret_path = FormPath(graphreader, options, origin, destination, forward_time_info);
+        for (auto& path : ret_path)
+            if (!path.empty())
+                path.erase(path.end()-1);
+        return ret_path;
+    }
+
     bool forward_exhausted = forward_pred_idx == kInvalidLabel;
     bool reverse_exhausted = reverse_pred_idx == kInvalidLabel;
     // If both directions have exhausted, we've failed to find a route. Abort

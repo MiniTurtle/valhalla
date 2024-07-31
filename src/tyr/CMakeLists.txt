@@ -5,6 +5,7 @@ set(sources
   height_serializer.cc
   isochrone_serializer.cc
   matrix_serializer.cc
+  all_to_all_serializer.cc
   serializers.cc
   transit_available_serializer.cc)
 

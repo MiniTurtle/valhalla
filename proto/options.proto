@@ -51,6 +51,7 @@ message PbfFieldSelector {
   bool directions = 3; // /route /trace_route /optimized_route /centroid
   bool status = 4;     // /status
   bool matrix = 5;     // sources_to_targets
+  bool all_to_all = 6;     // all_to_all
   // TODO: enable these once we have objects for them
   // bool isochrone = 5;
   // bool locate = 7;
@@ -355,6 +356,7 @@ message Options {
     expansion = 10;
     centroid = 11;
     status = 12;
+    all_to_all = 13;
   }
 
   enum DateTimeType {
@@ -399,7 +401,7 @@ message Options {
   }
   Costing.Type costing_type = 12;                                  // The main costing to use with the action, in multimodal this is the first costing to use
   map<int32, Costing> costings = 13;                               // A map of Costing.Type enum to its Costing object
-  repeated Location locations = 14;                                // Locations for /route /optimized /locate /isochrone
+  repeated Location locations = 14;                                // Locations for /route /optimized /locate /isochrone /all_to_all
   repeated Location exclude_locations = 15;                        // Avoids for any costing
   repeated Location sources = 16;                                  // Sources for /sources_to_targets
   repeated Location targets = 17;                                  // Targets for /sources_to_targets

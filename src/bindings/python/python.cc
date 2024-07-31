@@ -55,6 +55,9 @@ PYBIND11_MODULE(python_valhalla, m) {
           "matrix", [](vt::actor_t& self, std::string& req) { return self.matrix(req); },
           "Computes the time and distance between a set of locations and returns them as a matrix table.")
       .def(
+          "all_to_all", [](vt::actor_t& self, std::string& req) { return self.all_to_all(req); },
+          "Computes the time and distance between a set of locations and returns them.")
+      .def(
           "isochrone", [](vt::actor_t& self, std::string& req) { return self.isochrone(req); },
           "Calculates isochrones and isodistances.")
       .def(

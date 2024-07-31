@@ -39,6 +39,7 @@ public:
   std::string locate(Api& request);
   void route(Api& request);
   void matrix(Api& request);
+  void all_to_all(Api& request);
   void isochrones(Api& request);
   void trace(Api& request);
   std::string height(Api& request);
@@ -59,6 +60,7 @@ protected:
   void init_locate(Api& request);
   void init_route(Api& request);
   void init_matrix(Api& request);
+  void init_all_to_all(Api& request);
   void init_isochrones(Api& request);
   void init_trace(Api& request);
   std::vector<midgard::PointLL> init_height(Api& request);

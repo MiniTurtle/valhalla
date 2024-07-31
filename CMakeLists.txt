@@ -64,12 +64,12 @@ endif()
 # Explicitly set the build type to Release if no other type is specified
 # on the command line.  Without this, cmake defaults to an unoptimized,
 # non-debug build, which almost nobody wants.
-if(NOT MSVC_IDE) # TODO: May need to be extended for Xcode, CLion, etc.
+# if(NOT MSVC_IDE) # TODO: May need to be extended for Xcode, CLion, etc.
   if(NOT CMAKE_BUILD_TYPE)
     message(STATUS "No build type specified, defaulting to Release")
     set(CMAKE_BUILD_TYPE Release)
   endif()
-endif()
+# endif()
 
 if(CMAKE_BUILD_TYPE STREQUAL Debug)
   message(STATUS "Configuring in debug mode")
@@ -82,7 +82,7 @@ elseif(CMAKE_BUILD_TYPE STREQUAL MinRelSize)
 elseif(CMAKE_BUILD_TYPE STREQUAL None)
   message(STATUS "Configuring without a mode, no optimization flags will be set")
 else()
-  message(FATAL_ERROR "Unrecognized build type. Use one of Debug, Release, RelWithDebInfo, MinRelSize, None")
+  message(FATAL_ERROR "Unrecognized build type. Use one of Debug, Release, RelWithDebInfo, MinRelSize, None." " Got ${CMAKE_BUILD_TYPE}")
 endif()
 
 function(create_source_groups prefix)
@@ -274,7 +274,7 @@ endfunction()
 
 ## Valhalla programs
 set(valhalla_programs valhalla_run_map_match valhalla_benchmark_loki valhalla_benchmark_skadi
-  valhalla_run_isochrone valhalla_run_route valhalla_benchmark_adjacency_list valhalla_run_matrix
+  valhalla_run_isochrone valhalla_run_route valhalla_benchmark_adjacency_list valhalla_run_matrix valhalla_run_all_to_all
   valhalla_path_comparison valhalla_export_edges valhalla_expand_bounding_box valhalla_service)
 
 ## Valhalla data tools

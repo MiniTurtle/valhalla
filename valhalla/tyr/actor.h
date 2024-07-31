@@ -86,6 +86,10 @@ public:
   std::string matrix(const std::string& request_str,
                      const std::function<void()>* interrupt = nullptr,
                      Api* api = nullptr);
+  
+  std::string all_to_all(const std::string& request_str,
+                     const std::function<void()>* interrupt = nullptr,
+                     Api* api = nullptr);
 
   /**
    * Perform the optimized_route action and return json or protobuf depending on which was requested.

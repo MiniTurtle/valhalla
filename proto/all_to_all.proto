@@ -1,0 +1,11 @@
+syntax = "proto3";
+option optimize_for = LITE_RUNTIME;
+package valhalla;
+import public "common.proto";
+
+message AllToAll {
+  repeated float distances = 1;
+  repeated float times = 2;
+  repeated uint32 from_indices = 3;
+  repeated uint32 to_indices = 4;
+}

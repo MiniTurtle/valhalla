@@ -16,6 +16,7 @@ set(sources_with_warnings
   isochrone.cc
   map_matcher.cc
   matrix_action.cc
+  all_to_all_action.cc
   multimodal.cc
   optimized_route_action.cc
   optimizer.cc

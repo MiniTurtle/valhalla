@@ -41,6 +41,8 @@ struct CandidateConnection {
  */
 class BidirectionalAStar : public PathAlgorithm {
 public:
+  typedef std::function<bool(const CandidateConnection& begin, const CandidateConnection& end)> DELEGATE_EARLY_EXIT;
+
   /**
    * Constructor.
    * @param config A config object of key, value pairs
@@ -84,6 +86,8 @@ public:
    */
   void Clear() override;
 
+  void set_early_exit(DELEGATE_EARLY_EXIT callback) { callback_should_do_early_exit = callback; }
+
 protected:
   // Access mode used by the costing method
   uint32_t access_mode_;
@@ -124,6 +128,8 @@ protected:
   uint32_t iterations_threshold_;
   uint32_t desired_paths_count_;
   std::vector<CandidateConnection> best_connections_;
+  
+  DELEGATE_EARLY_EXIT callback_should_do_early_exit;
 
   // Extends search in one direction if the other direction exhausted, but only if the non-exhausted
   // end started on a not_thru or closed (due to live-traffic) edge

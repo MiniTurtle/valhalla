@@ -62,6 +62,7 @@ public:
 
   void route(Api& request);
   std::string matrix(Api& request);
+  std::string all_to_all(Api& request);
   void optimized_route(Api& request);
   std::string isochrones(Api& request);
   void trace_route(Api& request);

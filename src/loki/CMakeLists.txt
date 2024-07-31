@@ -5,6 +5,7 @@ set(sources
   height_action.cc
   reach.cc
   matrix_action.cc
+  all_to_all_action.cc
   status_action.cc
   transit_available_action.cc
   polygon_search.cc)
