@@ -126,7 +126,19 @@ std::string thor_worker_t::all_to_all(Api& request) {
             }
 
             bd.Clear();
-            auto paths = bd.GetBestPath(origin, dest, *reader, mode_costing, mode, options);
+
+             
+            std::vector<std::vector<PathInfo>> paths;
+            try {
+                paths = bd.GetBestPath(origin, dest, *reader, mode_costing, mode, options);
+            } catch(const std::exception& e) {
+                std::cerr << "GetBeshPath: " << e.what() << std::endl;
+                all_to_all->add_from_indices(i);
+                all_to_all->add_to_indices(j);
+                all_to_all->add_distances(-1);
+                all_to_all->add_times(-1);
+                continue;
+            }
 
             std::vector<PathData> path_datas;
             path_datas.reserve(paths.size());

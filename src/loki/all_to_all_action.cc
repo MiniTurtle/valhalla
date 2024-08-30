@@ -77,8 +77,8 @@ void loki_worker_t::all_to_all(Api& request) {
     const auto& costing_name = Costing_Enum_Name(options.costing_type());
 
     if (costing_name == "multimodal") {
-	throw valhalla_exception_t{140, Options_Action_Enum_Name(options.action())};
-    };
+		throw valhalla_exception_t{140, Options_Action_Enum_Name(options.action())};
+    }
 
 	auto connectivity_level = TileHierarchy::levels().back();
     uint32_t connectivity_radius = 0;
@@ -91,18 +91,19 @@ void loki_worker_t::all_to_all(Api& request) {
 		for (size_t i = 0; i < locations.size(); ++i) {
 			const auto& correlated = projections.at(locations[i]);
 			PathLocation::toPBF(correlated, options.mutable_locations(i), *reader);
+
 			if (!connectivity_map) {
 				continue;
 			}
-			auto colors =
-			connectivity_map->get_colors(connectivity_level, correlated, connectivity_radius);
+
+			auto colors = connectivity_map->get_colors(connectivity_level, correlated, connectivity_radius);
 			for (auto color : colors) {
-			auto itr = color_counts.find(color);
-			if (itr == color_counts.cend()) {
-				color_counts[color] = 1;
-			} else {
-				++itr->second;
-			}
+				auto itr = color_counts.find(color);
+				if (itr == color_counts.cend()) {
+					color_counts[color] = 1;
+				} else {
+					++itr->second;
+				}
 			}
 		}
     } catch (const std::exception&) { throw valhalla_exception_t{171}; }
