@@ -64,22 +64,22 @@ std::string serialize_to_pbf(Api& request) {
 namespace valhalla {
 namespace thor {
 
-thor_worker_t::thor_worker_t(const boost::property_tree::ptree& config,
+thor_worker_t::thor_worker_t(const boost::property_tree::ptree& _config,
                              const std::shared_ptr<baldr::GraphReader>& graph_reader)
-    : service_worker_t(config), mode(valhalla::sif::TravelMode::kPedestrian),
-      bidir_astar(config.get_child("thor")), bss_astar(config.get_child("thor")),
-      multi_modal_astar(config.get_child("thor")), timedep_forward(config.get_child("thor")),
-      timedep_reverse(config.get_child("thor")), costmatrix_(config.get_child("thor")),
-      time_distance_matrix_(config.get_child("thor")),
-      time_distance_bss_matrix_(config.get_child("thor")), isochrone_gen(config.get_child("thor")),
+    : service_worker_t(_config), config(_config), mode(valhalla::sif::TravelMode::kPedestrian),
+      bidir_astar(_config.get_child("thor")), bss_astar(_config.get_child("thor")),
+      multi_modal_astar(_config.get_child("thor")), timedep_forward(_config.get_child("thor")),
+      timedep_reverse(_config.get_child("thor")), costmatrix_(_config.get_child("thor")),
+      time_distance_matrix_(_config.get_child("thor")),
+      time_distance_bss_matrix_(_config.get_child("thor")), isochrone_gen(_config.get_child("thor")),
       reader(graph_reader ? graph_reader
-                          : std::make_shared<baldr::GraphReader>(config.get_child("mjolnir"))),
-      matcher_factory(config, reader), controller{} {
+                          : std::make_shared<baldr::GraphReader>(_config.get_child("mjolnir"))),
+      matcher_factory(_config, reader), controller{} {
 
   // Select the matrix algorithm based on the conf file (defaults to
   // select_optimal if not present)
-  auto conf_algorithm = config.get<std::string>("thor.source_to_target_algorithm", "select_optimal");
-  for (const auto& kv : config.get_child("service_limits")) {
+  auto conf_algorithm = _config.get<std::string>("thor.source_to_target_algorithm", "select_optimal");
+  for (const auto& kv : _config.get_child("service_limits")) {
     if (kv.first == "max_exclude_locations" || kv.first == "max_reachability" ||
         kv.first == "max_radius" || kv.first == "max_timedep_distance" ||
         kv.first == "max_timedep_distance_matrix" || kv.first == "max_alternates" ||
@@ -89,7 +89,7 @@ thor_worker_t::thor_worker_t(const boost::property_tree::ptree& config,
       continue;
     }
 
-    max_matrix_distance.emplace(kv.first, config.get<float>("service_limits." + kv.first +
+    max_matrix_distance.emplace(kv.first, _config.get<float>("service_limits." + kv.first +
                                                             ".max_matrix_distance"));
   }
 
@@ -102,7 +102,7 @@ thor_worker_t::thor_worker_t(const boost::property_tree::ptree& config,
   }
 
   max_timedep_distance =
-      config.get<float>("service_limits.max_timedep_distance", kDefaultMaxTimeDependentDistance);
+      _config.get<float>("service_limits.max_timedep_distance", kDefaultMaxTimeDependentDistance);
 
   // signal that the worker started successfully
   started();

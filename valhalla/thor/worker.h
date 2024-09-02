@@ -113,6 +113,8 @@ protected:
       Options& options,
       Api& request);
 
+  const boost::property_tree::ptree config;
+
   sif::TravelMode mode;
   std::vector<meili::Measurement> trace;
   sif::CostFactory factory;

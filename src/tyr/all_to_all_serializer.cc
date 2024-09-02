@@ -113,6 +113,7 @@ std::string serialize_all_to_all_json(const Api& request, double distance_scale)
         uint32_t from = all_to_all.from_indices(i);
         uint32_t to = all_to_all.to_indices(i);
         data_map[from][to] = i;
+        data_map[to][from] = i;
     }
 
     for (auto& it : data_map) {

@@ -104,7 +104,7 @@ int main(int argc, char* argv[]) {
 
     t0 = std::chrono::high_resolution_clock::now();
     thor_worker_t tw(config());
-    tw.all_to_all(request);
+    std::string result = tw.all_to_all(request);
 
     t1 = std::chrono::high_resolution_clock::now();
     ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
@@ -112,6 +112,10 @@ int main(int argc, char* argv[]) {
 
     // Shutdown protocol buffer library
     google::protobuf::ShutdownProtobufLibrary();
+
+    std::ofstream file("out.json");
+    file << result;
+    file.close();
 
     return EXIT_SUCCESS;
 }
