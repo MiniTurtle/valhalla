@@ -59,7 +59,7 @@ namespace loki {
 void loki_worker_t::init_all_to_all(Api& request) {
     // we require sources and targets
     auto& options = *request.mutable_options();
-    parse_locations(options.mutable_locations(), valhalla_exception_t{112});
+    parse_locations(options.mutable_locations(), request, valhalla_exception_t{112});
     if (options.locations_size() < 2) {
 	throw valhalla_exception_t{120};
     };
