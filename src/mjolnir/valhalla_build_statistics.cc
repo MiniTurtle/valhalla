@@ -3,16 +3,13 @@
 #include "statistics.h"
 
 #include "baldr/rapidjson_utils.h"
-#include <boost/format.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <cxxopts.hpp>
 #include <future>
 #include <iostream>
 #include <list>
 #include <mutex>
-#include <ostream>
-#include <queue>
-#include <sstream>
+#include <random>
 #include <string>
 #include <thread>
 #include <utility>
@@ -23,7 +20,6 @@
 #include "baldr/graphreader.h"
 #include "baldr/nodeinfo.h"
 #include "baldr/tilehierarchy.h"
-#include "config.h"
 #include "filesystem.h"
 #include "midgard/aabb2.h"
 #include "midgard/distanceapproximator.h"
@@ -572,6 +568,8 @@ void BuildStatistics(const boost::property_tree::ptree& pt) {
 
 int main(int argc, char** argv) {
   const auto program = filesystem::path(__FILE__).stem().string();
+  // args
+  boost::property_tree::ptree config;
 
   try {
     // clang-format off
@@ -589,9 +587,9 @@ int main(int argc, char** argv) {
     // clang-format on
 
     auto result = options.parse(argc, argv);
-    if (!parse_common_args(program, options, result, "mjolnir.logging", true))
+    if (!parse_common_args(program, options, result, config, "mjolnir.logging", true))
       return EXIT_SUCCESS;
-  } catch (cxxopts::OptionException& e) {
+  } catch (cxxopts::exceptions::exception& e) {
     std::cerr << e.what() << std::endl;
     return EXIT_FAILURE;
   } catch (std::exception& e) {
@@ -600,7 +598,7 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  BuildStatistics(valhalla::config());
+  BuildStatistics(config);
 
   return EXIT_SUCCESS;
 }

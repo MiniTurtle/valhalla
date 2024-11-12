@@ -46,6 +46,8 @@ constexpr float kTCCrossing = 2.0f;
 constexpr float kTCUnfavorable = 2.5f;
 constexpr float kTCUnfavorableSharp = 3.5f;
 constexpr float kTCReverse = 9.5f;
+constexpr float kTCRamp = 1.5f;
+constexpr float kTCRoundabout = 0.5f;
 
 // Turn costs based on side of street driving
 constexpr float kRightSideTurnCosts[] = {kTCStraight,       kTCSlight,  kTCFavorable,
@@ -376,7 +378,7 @@ bool MotorScooterCost::Allowed(const baldr::DirectedEdge* edge,
   // Check access, U-turn, and simple turn restriction.
   // Allow U-turns at dead-end nodes.
   if (!IsAccessible(edge) || (!pred.deadend() && pred.opp_local_idx() == edge->localedgeidx()) ||
-      ((pred.restrictions() & (1 << edge->localedgeidx())) && !ignore_restrictions_) ||
+      ((pred.restrictions() & (1 << edge->localedgeidx())) && !ignore_turn_restrictions_) ||
       (edge->surface() > kMinimumScooterSurface) || IsUserAvoidEdge(edgeid) ||
       (!allow_destination_only_ && !pred.destonly() && edge->destonly()) ||
       (pred.closure_pruning() && IsClosed(edge, tile))) {
@@ -400,15 +402,15 @@ bool MotorScooterCost::AllowedReverse(const baldr::DirectedEdge* edge,
   // Check access, U-turn, and simple turn restriction.
   // Allow U-turns at dead-end nodes.
   if (!IsAccessible(opp_edge) || (!pred.deadend() && pred.opp_local_idx() == edge->localedgeidx()) ||
-      ((opp_edge->restrictions() & (1 << pred.opp_local_idx())) && !ignore_restrictions_) ||
+      ((opp_edge->restrictions() & (1 << pred.opp_local_idx())) && !ignore_turn_restrictions_) ||
       (opp_edge->surface() > kMinimumScooterSurface) || IsUserAvoidEdge(opp_edgeid) ||
       (!allow_destination_only_ && !pred.destonly() && opp_edge->destonly()) ||
       (pred.closure_pruning() && IsClosed(opp_edge, tile))) {
     return false;
   }
 
-  return DynamicCost::EvaluateRestrictions(access_mask_, edge, false, tile, opp_edgeid, current_time,
-                                           tz_index, restriction_idx);
+  return DynamicCost::EvaluateRestrictions(access_mask_, opp_edge, false, tile, opp_edgeid,
+                                           current_time, tz_index, restriction_idx);
 }
 
 Cost MotorScooterCost::EdgeCost(const baldr::DirectedEdge* edge,
@@ -426,9 +428,11 @@ Cost MotorScooterCost::EdgeCost(const baldr::DirectedEdge* edge,
     return {sec * ferry_factor_, sec};
   }
 
+  // prevent scooter speed to become 0
   uint32_t scooter_speed =
-      (std::min(top_speed_, speed) * kSurfaceSpeedFactors[static_cast<uint32_t>(edge->surface())] *
-       kGradeBasedSpeedFactor[static_cast<uint32_t>(edge->weighted_grade())]);
+      std::max(1.f, (std::min(top_speed_, speed) *
+                     kSurfaceSpeedFactors[static_cast<uint32_t>(edge->surface())] *
+                     kGradeBasedSpeedFactor[static_cast<uint32_t>(edge->weighted_grade())]));
 
   assert(scooter_speed < speedfactor_.size());
   float sec = (edge->length() * speedfactor_[scooter_speed]);
@@ -469,7 +473,7 @@ Cost MotorScooterCost::TransitionCost(const baldr::DirectedEdge* edge,
   // destination only, alley, maneuver penalty
   uint32_t idx = pred.opp_local_idx();
   Cost c = base_transition_cost(node, edge, &pred, idx);
-  c.secs = OSRMCarTurnDuration(edge, node, idx);
+  c.secs += OSRMCarTurnDuration(edge, node, idx);
 
   // Transition time = turncost * stopimpact * densityfactor
   if (edge->stopimpact(idx) > 0 && !shortest_) {
@@ -484,9 +488,9 @@ Cost MotorScooterCost::TransitionCost(const baldr::DirectedEdge* edge,
 
     if ((edge->use() != Use::kRamp && pred.use() == Use::kRamp) ||
         (edge->use() == Use::kRamp && pred.use() != Use::kRamp)) {
-      turn_cost += 1.5f;
+      turn_cost += kTCRamp;
       if (edge->roundabout())
-        turn_cost += 0.5f;
+        turn_cost += kTCRoundabout;
     }
 
     float seconds = turn_cost;
@@ -538,7 +542,7 @@ Cost MotorScooterCost::TransitionCostReverse(const uint32_t idx,
   // Get the transition cost for country crossing, ferry, gate, toll booth,
   // destination only, alley, maneuver penalty
   Cost c = base_transition_cost(node, edge, pred, idx);
-  c.secs = OSRMCarTurnDuration(edge, node, pred->opp_local_idx());
+  c.secs += OSRMCarTurnDuration(edge, node, pred->opp_local_idx());
 
   // Transition time = turncost * stopimpact * densityfactor
   if (edge->stopimpact(idx) > 0 && !shortest_) {
@@ -553,9 +557,9 @@ Cost MotorScooterCost::TransitionCostReverse(const uint32_t idx,
 
     if ((edge->use() != Use::kRamp && pred->use() == Use::kRamp) ||
         (edge->use() == Use::kRamp && pred->use() != Use::kRamp)) {
-      turn_cost += 1.5f;
+      turn_cost += kTCRamp;
       if (edge->roundabout())
-        turn_cost += 0.5f;
+        turn_cost += kTCRoundabout;
     }
 
     float seconds = turn_cost;
@@ -638,7 +642,8 @@ public:
 
 TestMotorScooterCost* make_motorscootercost_from_json(const std::string& property, float testVal) {
   std::stringstream ss;
-  ss << R"({"costing_options":{"motor_scooter":{")" << property << R"(":)" << testVal << "}}}";
+  ss << R"({"costing": "motor_scooter", "costing_options":{"motor_scooter":{")" << property << R"(":)"
+     << testVal << "}}}";
   Api request;
   ParseApi(ss.str(), valhalla::Options::route, request);
   return new TestMotorScooterCost(request.options().costings().find(Costing::motor_scooter)->second);

@@ -3,11 +3,6 @@
 
 #include <boost/format.hpp>
 #include <boost/property_tree/ptree.hpp>
-#include <iostream>
-#include <map>
-#include <ostream>
-#include <set>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,6 +23,50 @@ using namespace valhalla::baldr;
 using namespace valhalla::mjolnir;
 
 namespace {
+
+struct ShortcutAccessRestriction {
+  std::unordered_map<AccessType, AccessRestriction> all_restrictions;
+  // important to set the edge's attribute
+  uint64_t modes = 0;
+
+  ShortcutAccessRestriction(const std::vector<AccessRestriction>&& restrictions) {
+    for (const auto& res : restrictions) {
+      modes |= res.modes();
+      all_restrictions.emplace(res.type(), std::move(res));
+    }
+  };
+
+  // updates non-conditional restrictions if their value is lower than the current value
+  // TODO(nils): we could also contract over conditional restrictions with a bit more work:
+  //   kTimeDenied is fine to just append all restrictions of the base edges, but kTimeAllowed
+  //   will be harder, there we'll have to merge overlapping time periods
+  void update_nonconditional(const std::vector<AccessRestriction>&& other_restrictions) {
+    for (const auto& new_ar : other_restrictions) {
+      // update the modes for the edge attribute regardless
+      if (new_ar.type() == AccessType::kTimedAllowed || new_ar.type() == AccessType::kTimedDenied ||
+          new_ar.type() == AccessType::kDestinationAllowed) {
+        continue;
+      }
+      modes |= new_ar.modes();
+      auto ar_inserted = all_restrictions.emplace(new_ar.type(), new_ar);
+      if (!ar_inserted.second && new_ar.value() < ar_inserted.first->second.value()) {
+        ar_inserted.first->second = std::move(new_ar);
+      }
+    }
+  }
+};
+
+// only keeps access restrictions which can fail contraction
+void remove_nonconditional_restrictions(std::vector<AccessRestriction>& access_restrictions) {
+  access_restrictions.erase(std::remove_if(std::begin(access_restrictions),
+                                           std::end(access_restrictions),
+                                           [](const AccessRestriction& elem) {
+                                             return elem.type() != AccessType::kDestinationAllowed &&
+                                                    elem.type() != AccessType::kTimedAllowed &&
+                                                    elem.type() != AccessType::kTimedDenied;
+                                           }),
+                            std::end(access_restrictions));
+}
 
 // Simple structure to hold the 2 pair of directed edges at a node.
 // First edge in the pair is incoming and second is outgoing
@@ -59,9 +98,9 @@ bool EdgesMatch(const graph_tile_ptr& tile, const DirectedEdge* edge1, const Dir
     return false;
   }
 
-  // Neither edge can be part of a complex turn restriction or differ on access restrictions
+  // Neither edge can be part of a complex turn restriction
   if (edge1->start_restriction() || edge1->end_restriction() || edge2->start_restriction() ||
-      edge2->end_restriction() || edge1->access_restriction() != edge2->access_restriction()) {
+      edge2->end_restriction()) {
     return false;
   }
 
@@ -71,25 +110,18 @@ bool EdgesMatch(const graph_tile_ptr& tile, const DirectedEdge* edge1, const Dir
   // bridge and tunnel here
   if (edge1->classification() != edge2->classification() || edge1->link() != edge2->link() ||
       edge1->use() != edge2->use() || edge1->toll() != edge2->toll() ||
-      edge1->destonly() != edge2->destonly() || edge1->unpaved() != edge2->unpaved() ||
-      edge1->surface() != edge2->surface() || edge1->roundabout() != edge2->roundabout()) {
+      edge1->destonly() != edge2->destonly() || edge1->destonly_hgv() != edge2->destonly_hgv() ||
+      edge1->unpaved() != edge2->unpaved() || edge1->surface() != edge2->surface() ||
+      edge1->roundabout() != edge2->roundabout()) {
     return false;
   }
 
-  // Names must match
-  // TODO - this allows matches in any order. Do we need to maintain order?
-  // TODO - should allow near matches?
-  std::vector<std::string> edge1names = tile->GetNames(edge1);
-  std::vector<std::string> edge2names = tile->GetNames(edge2);
-  std::sort(edge1names.begin(), edge1names.end());
-  std::sort(edge2names.begin(), edge2names.end());
-  if (edge1names != edge2names)
-    return false;
-
-  // if they have access restrictions those must match (for modes that use shortcuts)
-  if (edge1->access_restriction()) {
+  // if there's conditional access restrictions, they must match; others we can safely contract over
+  if (edge1->access_restriction() || edge2->access_restriction()) {
     auto res1 = tile->GetAccessRestrictions(edge1 - tile->directededge(0), kVehicularAccess);
+    remove_nonconditional_restrictions(res1);
     auto res2 = tile->GetAccessRestrictions(edge2 - tile->directededge(0), kVehicularAccess);
+    remove_nonconditional_restrictions(res2);
     if (res1.size() != res2.size())
       return false;
     for (size_t i = 0; i < res1.size(); ++i) {
@@ -133,26 +165,6 @@ GraphId GetOpposingEdge(const GraphId& node,
   LOG_ERROR("Opposing directed edge not found at LL= " + std::to_string(ll.lat()) + "," +
             std::to_string(ll.lng()));
   return GraphId(0, 0, 0);
-}
-
-/**
- * Is there an opposing edge with matching edgeinfo offset. The end node of the directed edge
- * must be in the same tile as the directed edge.
- * @param  tile          Graph tile of the edge
- * @param  directededge  Directed edge to match.
- */
-bool OpposingEdgeInfoMatches(const graph_tile_ptr& tile, const DirectedEdge* edge) {
-  // Get the nodeinfo at the end of the edge. Iterate through the directed edges and return
-  // true if a matching edgeinfo offset if found.
-  const NodeInfo* nodeinfo = tile->node(edge->endnode().id());
-  const DirectedEdge* directededge = tile->directededge(nodeinfo->edge_index());
-  for (uint32_t i = 0; i < nodeinfo->edge_count(); i++, directededge++) {
-    // Return true if the edge info matches (same name, shape, etc.)
-    if (directededge->edgeinfo_offset() == edge->edgeinfo_offset()) {
-      return true;
-    }
-  }
-  return false;
 }
 
 // Get the ISO country code at the end node
@@ -250,11 +262,6 @@ bool CanContract(GraphReader& reader,
     return false;
   }
 
-  // Can not have different speeds in the same direction
-  if ((oppdiredge1->speed() != edge2->speed()) || (oppdiredge2->speed() != edge1->speed())) {
-    return false;
-  }
-
   // ISO country codes at the end nodes must equal this node
   std::string iso = tile->admininfo(nodeinfo->admin_index()).country_iso();
   std::string e1_iso = EndNodeIso(edge1, reader);
@@ -290,16 +297,17 @@ bool CanContract(GraphReader& reader,
 }
 
 // Connect 2 edges shape and update the next end node in the new level
-uint32_t ConnectEdges(GraphReader& reader,
-                      const GraphId& startnode,
-                      const GraphId& edgeid,
-                      std::list<PointLL>& shape,
-                      GraphId& endnode,
-                      uint32_t& opp_local_idx,
-                      uint32_t& restrictions,
-                      float& average_density,
-                      float& total_duration,
-                      float& total_truck_duration) {
+void ConnectEdges(GraphReader& reader,
+                  const GraphId& startnode,
+                  const GraphId& edgeid,
+                  std::list<PointLL>& shape,
+                  GraphId& endnode,
+                  uint32_t& opp_local_idx,
+                  uint32_t& restrictions,
+                  float& average_density,
+                  float& total_duration,
+                  float& total_truck_duration,
+                  ShortcutAccessRestriction& access_restrictions) {
   // Get the tile and directed edge.
   auto tile = reader.GetGraphTile(startnode);
   const DirectedEdge* directededge = tile->directededge(edgeid);
@@ -314,7 +322,6 @@ uint32_t ConnectEdges(GraphReader& reader,
   total_duration += edge_duration;
 
   // Add edge and turn duration for truck
-  // Currently use the same as for cars. TODO: implement for trucks
   total_truck_duration += turn_duration;
   auto const truck_speed = tile->GetSpeed(directededge, kNoFlowMask, kInvalidSecondsOfWeek, true);
   assert(truck_speed != 0);
@@ -341,9 +348,11 @@ uint32_t ConnectEdges(GraphReader& reader,
   // Add to the weighted average
   average_density += directededge->length() * directededge->density();
 
-  // Update the end node and return the length
+  // Preserve the most restrictive access restrictions
+  access_restrictions.update_nonconditional(tile->GetAccessRestrictions(edgeid.id(), kAllAccess));
+
+  // Update the end node
   endnode = directededge->endnode();
-  return directededge->length();
 }
 
 // Check if the edge is entering a contracted node
@@ -355,18 +364,18 @@ bool IsEnteringEdgeOfContractedNode(GraphReader& reader, const GraphId& nodeid, 
 }
 
 // Add shortcut edges (if they should exist) from the specified node
-uint32_t AddShortcutEdges(GraphReader& reader,
-                          const graph_tile_ptr& tile,
-                          GraphTileBuilder& tilebuilder,
-                          const GraphId& start_node,
-                          const uint32_t edge_index,
-                          const uint32_t edge_count,
-                          std::unordered_map<uint32_t, uint32_t>& shortcuts) {
+std::pair<uint32_t, uint32_t> AddShortcutEdges(GraphReader& reader,
+                                               const graph_tile_ptr& tile,
+                                               GraphTileBuilder& tilebuilder,
+                                               const GraphId& start_node,
+                                               const uint32_t edge_index,
+                                               const uint32_t edge_count,
+                                               std::unordered_map<uint32_t, uint32_t>& shortcuts) {
   // Shortcut edges have to start at a node that is not contracted - return if
   // this node can be contracted.
   EdgePairs edgepairs;
   if (CanContract(reader, tile, start_node, edgepairs)) {
-    return 0;
+    return {uint32_t(0), uint32_t(0)};
   }
 
   // Check if this is the last edge in a shortcut (if the endnode cannot be contracted).
@@ -377,6 +386,7 @@ uint32_t AddShortcutEdges(GraphReader& reader,
   // Iterate through directed edges of the base node
   uint32_t shortcut = 0;
   uint32_t shortcut_count = 0;
+  uint32_t total_edge_count = 0;
   GraphId edge_id(start_node.tileid(), start_node.level(), edge_index);
   for (uint32_t i = 0; i < edge_count; i++, ++edge_id) {
     // Skip transit connection edges.
@@ -394,19 +404,21 @@ uint32_t AddShortcutEdges(GraphReader& reader,
     // edge of the contracted node.
     GraphId end_node = directededge->endnode();
     if (IsEnteringEdgeOfContractedNode(reader, end_node, edge_id)) {
+      total_edge_count++;
       // Form a shortcut edge.
       DirectedEdge newedge = *directededge;
-      uint32_t length = newedge.length();
 
       // For computing weighted density and total turn duration along the shortcut
-      float average_density = length * newedge.density();
+      uint32_t edge_length = newedge.length();
+      float average_density = edge_length * newedge.density();
       uint32_t const speed = tile->GetSpeed(directededge, kNoFlowMask);
       assert(speed != 0);
-      float total_duration = length / (speed * kKPHtoMetersPerSec);
+      float total_duration = edge_length / (speed * kKPHtoMetersPerSec);
       uint32_t const truck_speed =
-          tile->GetSpeed(directededge, kNoFlowMask, kInvalidSecondsOfWeek, true);
+          std::min(tile->GetSpeed(directededge, kNoFlowMask, kInvalidSecondsOfWeek, true),
+                   directededge->truck_speed() ? directededge->truck_speed() : kMaxAssumedTruckSpeed);
       assert(truck_speed != 0);
-      float total_truck_duration = directededge->length() / (truck_speed * kKPHtoMetersPerSec);
+      float total_truck_duration = edge_length / (truck_speed * kKPHtoMetersPerSec);
 
       // Get the shape for this edge. If this initial directed edge is not
       // forward - reverse the shape so the edge info stored is forward for
@@ -418,22 +430,10 @@ uint32_t AddShortcutEdges(GraphReader& reader,
         std::reverse(shape.begin(), shape.end());
       }
 
-      // Get names - they apply over all edges of the shortcut
-      auto names = edgeinfo.GetNames();
-      auto tagged_values = edgeinfo.GetTaggedValues();
-      auto linguistics = edgeinfo.GetLinguisticTaggedValues();
-
-      auto types = edgeinfo.GetTypes();
-
-      // Add any access restriction records. We don't contract if they differ, so if
-      // there's any, they're the same for all involved edges
-      if (newedge.access_restriction()) {
-        auto restrictions = tile->GetAccessRestrictions(edge_id.id(), kAllAccess);
-        for (const auto& res : restrictions) {
-          tilebuilder.AddAccessRestriction(AccessRestriction(tilebuilder.directededges().size(),
-                                                             res.type(), res.modes(), res.value()));
-        }
-      }
+      // store all access_restrictions of the base edge: non-conditional ones will be updated while
+      // contracting, conditional ones are breaking contraction and are safe to simply copy
+      ShortcutAccessRestriction access_restrictions{
+          tile->GetAccessRestrictions(edge_id.id(), kAllAccess)};
 
       // Connect edges to the shortcut while the end node is marked as
       // contracted (contains edge pairs in the shortcut info).
@@ -468,27 +468,27 @@ uint32_t AddShortcutEdges(GraphReader& reader,
         // end node in the new level). Keep track of the last restriction
         // on the connected shortcut - need to set that so turn restrictions
         // off of shortcuts work properly
-        length += ConnectEdges(reader, end_node, next_edge_id, shape, end_node, opp_local_idx, rst,
-                               average_density, total_duration, total_truck_duration);
+        ConnectEdges(reader, end_node, next_edge_id, shape, end_node, opp_local_idx, rst,
+                     average_density, total_duration, total_truck_duration, access_restrictions);
+        total_edge_count++;
       }
 
-      // Do we need to force adding edgeinfo (opposing edge could have diff names)?
-      // If end node is in the same tile and opposing edge does not have matching
-      // edge_info_offset).
-      bool diff_names = directededge->endnode().tileid() == edge_id.tileid() &&
-                        !OpposingEdgeInfoMatches(tile, directededge);
+      // Get the length from the shape. This prevents roundoff issues when forming
+      // elevation.
+      uint32_t length = valhalla::midgard::length(shape);
 
       // Add the edge info. Use length and number of shape points to match an
       // edge in case multiple shortcut edges exist between the 2 nodes.
       // Test whether this shape is forward or reverse (in case an existing
       // edge exists). Shortcuts use way Id = 0.Set mean elevation to 0 as a placeholder,
-      // set it later if adding elevation to this dataset.
+      // set it later if adding elevation to this dataset. No need for names etc, shortcuts
+      // aren't used in guidance
       bool forward = true;
       uint32_t idx = ((length & 0xfffff) | ((shape.size() & 0xfff) << 20));
       uint32_t edge_info_offset =
           tilebuilder.AddEdgeInfo(idx, start_node, end_node, 0, 0, edgeinfo.bike_network(),
-                                  edgeinfo.speed_limit(), shape, names, tagged_values, linguistics,
-                                  types, forward, diff_names);
+                                  edgeinfo.speed_limit(), shape, {}, {}, {}, 0, forward, false);
+      ;
 
       newedge.set_edgeinfo_offset(edge_info_offset);
 
@@ -501,6 +501,18 @@ uint32_t AddShortcutEdges(GraphReader& reader,
       // directed edge in the shortcut chain
       newedge.set_opp_local_idx(opp_local_idx);
       newedge.set_restrictions(rst);
+
+      // add new access restrictions if any and set the mask on the edge
+      if (access_restrictions.all_restrictions.size()) {
+        newedge.set_access_restriction(access_restrictions.modes);
+        for (const auto& res : access_restrictions.all_restrictions) {
+          tilebuilder.AddAccessRestriction(AccessRestriction(tilebuilder.directededges().size(),
+                                                             res.second.type(), res.second.modes(),
+                                                             res.second.value()));
+        }
+      }
+
+      // set new access mask
 
       // Update the length, curvature, and end node
       newedge.set_length(length);
@@ -570,16 +582,17 @@ uint32_t AddShortcutEdges(GraphReader& reader,
     LOG_WARN("Exceeding max shortcut edges from a node at LL = " + std::to_string(ll.lat()) + "," +
              std::to_string(ll.lng()));
   }
-  return shortcut_count;
+  return {shortcut_count, total_edge_count};
 }
 
 // Form shortcuts for tiles in this level.
-uint32_t FormShortcuts(GraphReader& reader, const TileLevel& level) {
+std::pair<uint32_t, uint32_t> FormShortcuts(GraphReader& reader, const TileLevel& level) {
   // Iterate through the tiles at this level (TODO - can we mark the tiles
   // the tiles that shortcuts end within?)
   reader.Clear();
   bool added = false;
   uint32_t shortcut_count = 0;
+  uint32_t total_edge_count = 0;
   uint32_t ntiles = level.tiles.TileCount();
   uint32_t tile_level = (uint32_t)level.level;
   graph_tile_ptr tile;
@@ -621,8 +634,10 @@ uint32_t FormShortcuts(GraphReader& reader, const TileLevel& level) {
 
       // Add shortcut edges first.
       std::unordered_map<uint32_t, uint32_t> shortcuts;
-      shortcut_count += AddShortcutEdges(reader, tile, tilebuilder, node_id, old_edge_index,
-                                         old_edge_count, shortcuts);
+      auto stats = AddShortcutEdges(reader, tile, tilebuilder, node_id, old_edge_index,
+                                    old_edge_count, shortcuts);
+      shortcut_count += stats.first;
+      total_edge_count += stats.second;
 
       // Copy the rest of the directed edges from this node
       GraphId edgeid(tileid, tile_level, old_edge_index);
@@ -670,6 +685,9 @@ uint32_t FormShortcuts(GraphReader& reader, const TileLevel& level) {
           tilebuilder.AddLaneConnectivity(laneconnectivity);
         }
 
+        // Names can be different in the forward and backward direction
+        bool diff_names = tilebuilder.OpposingEdgeInfoDiffers(tile, directededge);
+
         // Get edge info, shape, and names from the old tile and add
         // to the new. Use prior edgeinfo offset as the key to make sure
         // edges that have the same end nodes are differentiated (this
@@ -681,7 +699,7 @@ uint32_t FormShortcuts(GraphReader& reader, const TileLevel& level) {
                                     edgeinfo.bike_network(), edgeinfo.speed_limit(),
                                     edgeinfo.encoded_shape(), edgeinfo.GetNames(),
                                     edgeinfo.GetTaggedValues(), edgeinfo.GetLinguisticTaggedValues(),
-                                    edgeinfo.GetTypes(), added);
+                                    edgeinfo.GetTypes(), added, diff_names);
 
         newedge.set_edgeinfo_offset(edge_info_offset);
 
@@ -724,7 +742,7 @@ uint32_t FormShortcuts(GraphReader& reader, const TileLevel& level) {
       reader.Trim();
     }
   }
-  return shortcut_count;
+  return {shortcut_count, total_edge_count};
 }
 
 } // namespace
@@ -749,8 +767,11 @@ void ShortcutBuilder::Build(const boost::property_tree::ptree& pt) {
   for (; tile_level != TileHierarchy::levels().rend(); ++tile_level) {
     // Create shortcuts on this level
     LOG_INFO("Creating shortcuts on level " + std::to_string(tile_level->level));
-    [[maybe_unused]] uint32_t count = FormShortcuts(reader, *tile_level);
-    LOG_INFO("Finished with " + std::to_string(count) + " shortcuts");
+    [[maybe_unused]] auto stats = FormShortcuts(reader, *tile_level);
+    [[maybe_unused]] uint32_t avg = stats.first ? (stats.second / stats.first) : 0;
+    LOG_INFO("Finished with " + std::to_string(stats.first) + " shortcuts superseding " +
+             std::to_string(stats.second) + " edges, average ~" + std::to_string(avg) +
+             " edges per shortcut");
   }
 }
 

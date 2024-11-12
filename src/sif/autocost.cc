@@ -46,6 +46,8 @@ constexpr float kTCCrossing = 2.0f;
 constexpr float kTCUnfavorable = 2.5f;
 constexpr float kTCUnfavorableSharp = 3.5f;
 constexpr float kTCReverse = 9.5f;
+constexpr float kTCRamp = 1.5f;
+constexpr float kTCRoundabout = 0.5f;
 
 // How much to favor taxi roads.
 constexpr float kTaxiFactor = 0.85f;
@@ -68,7 +70,6 @@ constexpr float kMinFactor = 0.1f;
 constexpr float kMaxFactor = 100000.0f;
 
 // Default auto attributes
-const std::string kDefaultAutoType = "car";
 constexpr float kDefaultAutoHeight = 1.6f; // Meters (62.9921 inches)
 constexpr float kDefaultAutoWidth = 1.9f;  // Meters (74.8031 inches)
 
@@ -80,6 +81,8 @@ constexpr ranged_default_t<float> kUseDistanceRange{0, kDefaultUseDistance, 1.0f
 constexpr ranged_default_t<float> kAutoHeightRange{0, kDefaultAutoHeight, 10.0f};
 constexpr ranged_default_t<float> kAutoWidthRange{0, kDefaultAutoWidth, 10.0f};
 constexpr ranged_default_t<uint32_t> kProbabilityRange{0, kDefaultRestrictionProbability, 100};
+constexpr ranged_default_t<uint32_t> kVehicleSpeedRange{10, baldr::kMaxAssumedSpeed,
+                                                        baldr::kMaxSpeedKph};
 
 constexpr float kHighwayFactor[] = {
     1.0f, // Motorway
@@ -352,20 +355,7 @@ AutoCost::AutoCost(const Costing& costing, uint32_t access_mask)
   // Get the vehicle type - enter as string and convert to enum.
   // Used to set the surface factor - penalize some roads based on surface type.
   surface_factor_ = 0.5f;
-  const std::string& type = costing_options.transport_type();
-  if (type == "motorcycle") {
-    type_ = VehicleType::kMotorcycle;
-    surface_factor_ = 1.0f;
-  } else if (type == "bus") {
-    type_ = VehicleType::kBus;
-  } else if (type == "tractor_trailer") {
-    type_ = VehicleType::kTractorTrailer;
-  } else if (type == "four_wheel_drive") {
-    type_ = VehicleType::kFourWheelDrive;
-    surface_factor_ = 0.0f;
-  } else {
-    type_ = VehicleType::kCar;
-  }
+  type_ = VehicleType::kCar;
 
   // Get the base transition costs
   get_base_costs(costing);
@@ -435,7 +425,7 @@ bool AutoCost::Allowed(const baldr::DirectedEdge* edge,
   // a not thru region and a heading selected an edge entering the
   // region.
   if (!IsAccessible(edge) || (!pred.deadend() && pred.opp_local_idx() == edge->localedgeidx()) ||
-      ((pred.restrictions() & (1 << edge->localedgeidx())) && !ignore_restrictions_) ||
+      ((pred.restrictions() & (1 << edge->localedgeidx())) && !ignore_turn_restrictions_) ||
       edge->surface() == Surface::kImpassable || IsUserAvoidEdge(edgeid) ||
       (!allow_destination_only_ && !pred.destonly() && edge->destonly()) ||
       (pred.closure_pruning() && IsClosed(edge, tile)) ||
@@ -460,7 +450,7 @@ bool AutoCost::AllowedReverse(const baldr::DirectedEdge* edge,
   // Check access, U-turn, and simple turn restriction.
   // Allow U-turns at dead-end nodes.
   if (!IsAccessible(opp_edge) || (!pred.deadend() && pred.opp_local_idx() == edge->localedgeidx()) ||
-      ((opp_edge->restrictions() & (1 << pred.opp_local_idx())) && !ignore_restrictions_) ||
+      ((opp_edge->restrictions() & (1 << pred.opp_local_idx())) && !ignore_turn_restrictions_) ||
       opp_edge->surface() == Surface::kImpassable || IsUserAvoidEdge(opp_edgeid) ||
       (!allow_destination_only_ && !pred.destonly() && opp_edge->destonly()) ||
       (pred.closure_pruning() && IsClosed(opp_edge, tile)) ||
@@ -468,8 +458,8 @@ bool AutoCost::AllowedReverse(const baldr::DirectedEdge* edge,
     return false;
   }
 
-  return DynamicCost::EvaluateRestrictions(access_mask_, edge, false, tile, opp_edgeid, current_time,
-                                           tz_index, restriction_idx);
+  return DynamicCost::EvaluateRestrictions(access_mask_, opp_edge, false, tile, opp_edgeid,
+                                           current_time, tz_index, restriction_idx);
 }
 
 bool AutoCost::ModeSpecificAllowed(const baldr::AccessRestriction& restriction) const {
@@ -564,7 +554,7 @@ Cost AutoCost::TransitionCost(const baldr::DirectedEdge* edge,
   // destination only, alley, maneuver penalty
   uint32_t idx = pred.opp_local_idx();
   Cost c = base_transition_cost(node, edge, &pred, idx);
-  c.secs = OSRMCarTurnDuration(edge, node, pred.opp_local_idx());
+  c.secs += OSRMCarTurnDuration(edge, node, pred.opp_local_idx());
 
   // Transition time = turncost * stopimpact * densityfactor
   if (edge->stopimpact(idx) > 0 && !shortest_) {
@@ -579,9 +569,9 @@ Cost AutoCost::TransitionCost(const baldr::DirectedEdge* edge,
 
     if ((edge->use() != Use::kRamp && pred.use() == Use::kRamp) ||
         (edge->use() == Use::kRamp && pred.use() != Use::kRamp)) {
-      turn_cost += 1.5f;
+      turn_cost += kTCRamp;
       if (edge->roundabout())
-        turn_cost += 0.5f;
+        turn_cost += kTCRoundabout;
     }
 
     float seconds = turn_cost;
@@ -632,7 +622,7 @@ Cost AutoCost::TransitionCostReverse(const uint32_t idx,
   // Get the transition cost for country crossing, ferry, gate, toll booth,
   // destination only, alley, maneuver penalty
   Cost c = base_transition_cost(node, edge, pred, idx);
-  c.secs = OSRMCarTurnDuration(edge, node, pred->opp_local_idx());
+  c.secs += OSRMCarTurnDuration(edge, node, pred->opp_local_idx());
 
   // Transition time = turncost * stopimpact * densityfactor
   if (edge->stopimpact(idx) > 0 && !shortest_) {
@@ -647,9 +637,9 @@ Cost AutoCost::TransitionCostReverse(const uint32_t idx,
 
     if ((edge->use() != Use::kRamp && pred->use() == Use::kRamp) ||
         (edge->use() == Use::kRamp && pred->use() != Use::kRamp)) {
-      turn_cost += 1.5f;
+      turn_cost += kTCRamp;
       if (edge->roundabout())
-        turn_cost += 0.5f;
+        turn_cost += kTCRoundabout;
     }
 
     float seconds = turn_cost;
@@ -697,7 +687,6 @@ void ParseAutoCostOptions(const rapidjson::Document& doc,
   const auto& json = rapidjson::get_child(doc, costing_options_key.c_str(), dummy);
 
   ParseBaseCostOptions(json, c, kBaseCostOptsConfig);
-  JSON_PBF_DEFAULT(co, kDefaultAutoType, json, "/type", transport_type);
   JSON_PBF_RANGED_DEFAULT(co, kAlleyFactorRange, json, "/alley_factor", alley_factor);
   JSON_PBF_RANGED_DEFAULT(co, kUseHighwaysRange, json, "/use_highways", use_highways);
   JSON_PBF_RANGED_DEFAULT(co, kUseTollsRange, json, "/use_tolls", use_tolls);
@@ -709,6 +698,7 @@ void ParseAutoCostOptions(const rapidjson::Document& doc,
   JSON_PBF_DEFAULT(co, false, json, "/include_hot", include_hot);
   JSON_PBF_DEFAULT(co, false, json, "/include_hov2", include_hov2);
   JSON_PBF_DEFAULT(co, false, json, "/include_hov3", include_hov3);
+  JSON_PBF_RANGED_DEFAULT(co, kVehicleSpeedRange, json, "/top_speed", top_speed);
 }
 
 cost_ptr_t CreateAutoCost(const Costing& costing_options) {
@@ -823,7 +813,7 @@ bool BusCost::AllowedReverse(const baldr::DirectedEdge* edge,
   // Check access, U-turn, and simple turn restriction.
   // Allow U-turns at dead-end nodes.
   if (!IsAccessible(opp_edge) || (!pred.deadend() && pred.opp_local_idx() == edge->localedgeidx()) ||
-      ((opp_edge->restrictions() & (1 << pred.opp_local_idx())) && !ignore_restrictions_) ||
+      ((opp_edge->restrictions() & (1 << pred.opp_local_idx())) && !ignore_turn_restrictions_) ||
       opp_edge->surface() == Surface::kImpassable || IsUserAvoidEdge(opp_edgeid) ||
       (!allow_destination_only_ && !pred.destonly() && opp_edge->destonly()) ||
       (pred.closure_pruning() && IsClosed(opp_edge, tile)) ||
@@ -831,8 +821,8 @@ bool BusCost::AllowedReverse(const baldr::DirectedEdge* edge,
     return false;
   }
 
-  return DynamicCost::EvaluateRestrictions(access_mask_, edge, false, tile, opp_edgeid, current_time,
-                                           tz_index, restriction_idx);
+  return DynamicCost::EvaluateRestrictions(access_mask_, opp_edge, false, tile, opp_edgeid,
+                                           current_time, tz_index, restriction_idx);
 }
 
 void ParseBusCostOptions(const rapidjson::Document& doc,
@@ -1002,15 +992,15 @@ bool TaxiCost::AllowedReverse(const baldr::DirectedEdge* edge,
   // Check access, U-turn, and simple turn restriction.
   // Allow U-turns at dead-end nodes.
   if (!IsAccessible(opp_edge) || (!pred.deadend() && pred.opp_local_idx() == edge->localedgeidx()) ||
-      ((opp_edge->restrictions() & (1 << pred.opp_local_idx())) && !ignore_restrictions_) ||
+      ((opp_edge->restrictions() & (1 << pred.opp_local_idx())) && !ignore_turn_restrictions_) ||
       opp_edge->surface() == Surface::kImpassable || IsUserAvoidEdge(opp_edgeid) ||
       (!allow_destination_only_ && !pred.destonly() && opp_edge->destonly()) ||
       (pred.closure_pruning() && IsClosed(opp_edge, tile)) ||
       (exclude_unpaved_ && !pred.unpaved() && opp_edge->unpaved())) {
     return false;
   }
-  return DynamicCost::EvaluateRestrictions(access_mask_, edge, false, tile, opp_edgeid, current_time,
-                                           tz_index, restriction_idx);
+  return DynamicCost::EvaluateRestrictions(access_mask_, opp_edge, false, tile, opp_edgeid,
+                                           current_time, tz_index, restriction_idx);
 }
 
 void ParseTaxiCostOptions(const rapidjson::Document& doc,
@@ -1059,8 +1049,8 @@ template <class T>
 std::shared_ptr<TestAutoCost>
 make_autocost_from_json(const std::string& property, T testVal, const std::string& extra_json = "") {
   std::stringstream ss;
-  ss << R"({"costing_options":{"auto":{")" << property << R"(":)" << testVal << "}}" << extra_json
-     << "}";
+  ss << R"({"costing": "auto", "costing_options":{"auto":{")" << property << R"(":)" << testVal
+     << "}}" << extra_json << "}";
   Api request;
   ParseApi(ss.str(), valhalla::Options::route, request);
   return std::make_shared<TestAutoCost>(request.options().costings().find(Costing::auto_)->second);

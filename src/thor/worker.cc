@@ -1,10 +1,7 @@
-#include <cstdint>
 #include <functional>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 #include "midgard/constants.h"
 #include "midgard/logging.h"
@@ -48,7 +45,7 @@ const std::unordered_map<std::string, float> kMaxDistances = {
 // a scale factor to apply to the score so that we bias towards closer results more
 constexpr float kDistanceScale = 10.f;
 
-#ifdef HAVE_HTTP
+#ifdef ENABLE_SERVICES
 std::string serialize_to_pbf(Api& request) {
   std::string buf;
   if (!request.SerializeToString(&buf)) {
@@ -101,6 +98,8 @@ thor_worker_t::thor_worker_t(const boost::property_tree::ptree& _config,
     source_to_target_algorithm = SELECT_OPTIMAL;
   }
 
+  costmatrix_allow_second_pass = config.get<bool>("thor.costmatrix_allow_second_pass", false);
+
   max_timedep_distance =
       _config.get<float>("service_limits.max_timedep_distance", kDefaultMaxTimeDependentDistance);
 
@@ -111,7 +110,7 @@ thor_worker_t::thor_worker_t(const boost::property_tree::ptree& _config,
 thor_worker_t::~thor_worker_t() {
 }
 
-#ifdef HAVE_HTTP
+#ifdef ENABLE_SERVICES
 prime_server::worker_t::result_t
 thor_worker_t::work(const std::list<zmq::message_t>& job,
                     void* request_info,
@@ -317,9 +316,9 @@ void thor_worker_t::cleanup() {
   multi_modal_astar.Clear();
   bss_astar.Clear();
   trace.clear();
-  costmatrix_.clear();
-  time_distance_matrix_.clear();
-  time_distance_bss_matrix_.clear();
+  costmatrix_.Clear();
+  time_distance_matrix_.Clear();
+  time_distance_bss_matrix_.Clear();
   isochrone_gen.Clear();
   centroid_gen.Clear();
   matcher_factory.ClearFullCache();

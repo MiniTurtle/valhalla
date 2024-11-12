@@ -119,11 +119,14 @@ TEST(Standalone, ShortFerry) {
 }
 
 TEST(Standalone, TruckFerryDuration) {
-  // corresponds to 33.3 m/sec (120 km/h) in the below map
-  uint32_t ferry_secs = 9;
+  // corresponds to 21.4 m/sec (~77 km/h) in the below map
+  uint32_t ferry_secs = 14;
 
   const std::string ascii_map = R"(
           A--B--C--D
+          |        |
+          |        |
+          |        |
           |        |
           E--------F
     )";
@@ -151,7 +154,16 @@ TEST(Standalone, TruckFerryDuration) {
   // verify we took the ferry edge and the duration tag was respected
   auto ferry_edge = fastest.trip().routes(0).legs(0).node(1).edge();
   ASSERT_EQ(ferry_edge.use(), valhalla::TripLeg_Use::TripLeg_Use_kFerryUse);
-  ASSERT_NEAR(ferry_edge.speed(), ferry_edge.length_km() / (ferry_secs * kHourPerSec), 0.1);
+  ASSERT_NEAR(ferry_edge.speed(), ferry_edge.length_km() / (ferry_secs * kHourPerSec), 0.2);
+  ASSERT_NEAR(fastest.directions().routes(0).legs(0).summary().time(), 50, 0.1);
+
+  // pass a higher ferry cost and make sure it's added to the time
+  valhalla::Api higher_ferry_cost =
+      gurka::do_action(valhalla::Options::route, map, {"A", "D"}, "truck",
+                       {{"/costing_options/truck/use_ferry", "1"},
+                        {"/costing_options/truck/ferry_cost", "10"}});
+
+  ASSERT_NEAR(higher_ferry_cost.directions().routes(0).legs(0).summary().time(), 60, 0.1);
 }
 
 TEST_F(FerryTest, DoNotReclassifyFerryConnection) {
@@ -285,7 +297,8 @@ TEST(Standalone, ReclassifyFerryUntagDestOnly) {
   EXPECT_TRUE(std::get<1>(upclassed)->classification() == valhalla::baldr::RoadClass::kPrimary);
 
   // we expect to take the shorter route on the left and the detour on the right
-  for (const std::string& mode : {"auto", "motorcycle", "taxi", "bus", "hov", "truck"}) {
+  std::vector<std::string> modes = {"auto", "motorcycle", "taxi", "bus", "hov", "truck"};
+  for (const auto& mode : modes) {
     auto res = gurka::do_action(valhalla::Options::route, map, {"A", "M"}, mode);
     gurka::assert::raw::expect_path(res, {"AB", "BC", "CD", "DE", "EF", "FKLG", "GH", "HM"},
                                     mode + " failed.");
@@ -418,6 +431,211 @@ TEST(Standalone, ReclassifyCorrectPath) {
   auto not_upclassed8 = gurka::findEdge(reader, layout, "LM", "M");
   EXPECT_TRUE(std::get<1>(not_upclassed8)->classification() ==
               valhalla::baldr::RoadClass::kServiceOther);
+}
+
+TEST(Standalone, ReclassifySeparateInboundAndOutbound) {
+  // Sometimes ferry path is connected to the separate inbound and outbound pathways.
+  // Both of them should be reclassified if both of them lead to the high road class.
+
+  const std::string ascii_map = R"(
+            A
+            |
+            |
+            B
+           / \
+          /   \
+         C     D
+        /      |
+    E--F---------------G
+    H-----I------------J
+           \  /
+            --
+  )";
+
+  std::map<std::string, std::string> primary = {{"highway", "primary"}, {"oneway", "yes"}};
+  std::map<std::string, std::string> service = {{"highway", "service"}, {"oneway", "yes"}};
+
+  const gurka::ways ways = {
+      {"AB",
+       {{"motor_vehicle", "yes"},
+        {"motorcar", "yes"},
+        {"bicycle", "yes"},
+        {"moped", "yes"},
+        {"bus", "yes"},
+        {"hov", "yes"},
+        {"taxi", "yes"},
+        {"motorcycle", "yes"},
+        {"route", "ferry"}}},
+      {"BCF", service},
+      {"IDB", service},
+      {"EFG", primary},
+      {"JIH", primary},
+  };
+
+  const auto layout = gurka::detail::map_to_coordinates(ascii_map, 500);
+  auto map = gurka::buildtiles(layout, ways, {}, {}, "test/data/gurka_reclassify_inbound_outbound");
+  baldr::GraphReader reader(map.config.get_child("mjolnir"));
+
+  // make sure that both service roads get reclassified
+  auto outbound_service = gurka::findEdge(reader, layout, "BCF", "F");
+  EXPECT_EQ(std::get<1>(outbound_service)->classification(), valhalla::baldr::RoadClass::kPrimary);
+  auto inbound_service = gurka::findEdge(reader, layout, "IDB", "B");
+  EXPECT_EQ(std::get<1>(inbound_service)->classification(), valhalla::baldr::RoadClass::kPrimary);
+}
+
+TEST(Standalone, ReclassifyInboundOnly) {
+  const std::string ascii_map = R"(
+            A
+            |
+            |
+            B
+           /
+          /
+         C
+        /
+    E--F---------------G
+    H-----I------------J
+  )";
+
+  std::map<std::string, std::string> primary = {{"highway", "primary"}, {"oneway", "yes"}};
+  std::map<std::string, std::string> service = {{"highway", "service"}, {"oneway", "yes"}};
+
+  const gurka::ways ways = {
+      {"AB",
+       {{"motor_vehicle", "yes"},
+        {"motorcar", "yes"},
+        {"bicycle", "yes"},
+        {"moped", "yes"},
+        {"bus", "yes"},
+        {"hov", "yes"},
+        {"taxi", "yes"},
+        {"motorcycle", "yes"},
+        {"route", "ferry"}}},
+      {"BCF", service},
+      {"EFG", primary},
+      {"JIH", primary},
+  };
+
+  const auto layout = gurka::detail::map_to_coordinates(ascii_map, 500);
+  auto map = gurka::buildtiles(layout, ways, {}, {}, "test/data/gurka_reclassify_outbound_only");
+  baldr::GraphReader reader(map.config.get_child("mjolnir"));
+
+  auto outbound_service = gurka::findEdge(reader, layout, "BCF", "F");
+  EXPECT_EQ(std::get<1>(outbound_service)->classification(), valhalla::baldr::RoadClass::kPrimary);
+}
+
+TEST(Standalone, ReclassifyOutboundOnly) {
+  const std::string ascii_map = R"(
+            A
+            |
+            |
+            B
+             \
+              \
+               D
+               |
+    E--F---------------G
+    H-----I------------J
+           \  /
+            --
+  )";
+
+  std::map<std::string, std::string> primary = {{"highway", "primary"}, {"oneway", "yes"}};
+  std::map<std::string, std::string> service = {{"highway", "service"}, {"oneway", "yes"}};
+
+  const gurka::ways ways = {
+      {"AB",
+       {{"motor_vehicle", "yes"},
+        {"motorcar", "yes"},
+        {"bicycle", "yes"},
+        {"moped", "yes"},
+        {"bus", "yes"},
+        {"hov", "yes"},
+        {"taxi", "yes"},
+        {"motorcycle", "yes"},
+        {"route", "ferry"}}},
+      {"IDB", service},
+      {"EFG", primary},
+      {"JIH", primary},
+  };
+
+  const auto layout = gurka::detail::map_to_coordinates(ascii_map, 500);
+  auto map = gurka::buildtiles(layout, ways, {}, {}, "test/data/gurka_reclassify_inbound_only");
+  baldr::GraphReader reader(map.config.get_child("mjolnir"));
+
+  auto inbound_service = gurka::findEdge(reader, layout, "IDB", "B");
+  EXPECT_EQ(std::get<1>(inbound_service)->classification(), valhalla::baldr::RoadClass::kPrimary);
+}
+
+TEST(Standalone, ConsiderBlockedRoads) {
+  // Nodes that block the path should be considered when the fastest way from ferry to high class road
+  // is evaluated, as otherwise found shortest path might be not traversable
+
+  const std::string ascii_map = R"(
+    A-------B   M
+            |   |
+            |   |
+        D---C-1-N
+       /        |
+      E         |
+       \        |
+        F-------O
+                |
+                P
+
+  )";
+
+  const gurka::ways ways = {
+      {"AB",
+       {{"motor_vehicle", "yes"},
+        {"motorcar", "yes"},
+        {"bicycle", "yes"},
+        {"moped", "yes"},
+        {"bus", "yes"},
+        {"hov", "yes"},
+        {"taxi", "yes"},
+        {"motorcycle", "yes"},
+        {"route", "ferry"}}},
+
+      // shorter road that is blocked by block
+      {"C1N", {{"highway", "service"}}},
+
+      // longer unblocked road
+      {"BC", {{"highway", "service"}}},
+      {"CD", {{"highway", "service"}}},
+      {"DE", {{"highway", "service"}}},
+      {"EF", {{"highway", "service"}}},
+      {"FO", {{"highway", "service"}}},
+
+      {"MNOP", {{"highway", "primary"}}},
+  };
+
+  const gurka::nodes nodes = {
+      {"1",
+       {
+           {"barrier", "block"},
+           {"motor_vehicle", "no"},
+       }},
+  };
+
+  const auto layout = gurka::detail::map_to_coordinates(ascii_map, 500);
+  auto map = gurka::buildtiles(layout, ways, nodes, {}, "test/data/gurka_reclassify_block");
+
+  // sanity check that the longer route is taken
+  auto result = gurka::do_action(valhalla::Options::route, map, {"A", "M"}, "auto");
+  gurka::assert::raw::expect_path(result, {"AB", "BC", "CD", "DE", "EF", "FO", "MNOP", "MNOP"});
+
+  baldr::GraphReader reader(map.config.get_child("mjolnir"));
+
+  // long not blocked road should be reclassified
+  for (const auto& name : {"BC", "CD", "DE", "EF", "FO"}) {
+    const auto way = gurka::findEdge(reader, layout, name, name + 1);
+    EXPECT_EQ(std::get<1>(way)->classification(), valhalla::baldr::RoadClass::kPrimary);
+  }
+
+  // short blocked route is not reclassified
+  auto blocked = gurka::findEdge(reader, layout, "C1N", "N");
+  EXPECT_EQ(std::get<1>(blocked)->classification(), valhalla::baldr::RoadClass::kServiceOther);
 }
 
 TEST(Standalone, ReclassifyNothingReclassified) {

@@ -1,19 +1,13 @@
 #include <cmath>
 #include <cstdint>
-#include <fstream>
 #include <future>
-#include <iostream>
 #include <memory>
-#include <queue>
-#include <random>
-#include <sstream>
 #include <string>
 #include <thread>
 #include <unordered_set>
 
 #include "baldr/rapidjson_utils.h"
 #include <boost/algorithm/string.hpp>
-#include <boost/format.hpp>
 #include <boost/property_tree/ptree.hpp>
 #include <boost/tokenizer.hpp>
 
@@ -1181,7 +1175,7 @@ void build_tiles(const boost::property_tree::ptree& pt,
     std::multimap<uint32_t, multi_polygon_type> tz_polys;
     if (tz_db_handle) {
       tz_polys = GetTimeZones(tz_db_handle, tile_bounds);
-      if (tz_polys.size() == 1) {
+      if (tz_polys.size() < 2) {
         tile_within_one_tz = true;
       }
     }

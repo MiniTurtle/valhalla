@@ -159,6 +159,8 @@ message Location {
 
   // This information will be ignored if provided in the request. Instead it will be filled in as the request is handled
   Correlation correlation = 90;
+  string time_zone_offset = 91;
+  string time_zone_name = 92;
 }
 
 message TransitEgressInfo {
@@ -342,6 +344,8 @@ message TaggedValue {
     kLevel = 4;
     kLevelRef = 5;
     kLandmark = 6;
+    kConditionalSpeedLimits = 7;
+    kLevels = 8;
     kTunnel = 49;
     kBridge = 50;
   }
@@ -361,7 +365,7 @@ enum VehicleType {
   kCar = 0;
   kMotorcycle = 1;
   kAutoBus = 2;
-  kTractorTrailer = 3;
+  kTruck = 3;
   kMotorScooter = 4;
 }
 
@@ -369,7 +373,7 @@ enum VehicleType {
 enum PedestrianType {
   kFoot = 0;
   kWheelchair = 1;
-  kSegway = 2;
+  kBlind = 2;
 }
 
 enum BicycleType {
@@ -388,4 +392,14 @@ enum TransitType {
   kCableCar = 5;
   kGondola = 6;
   kFunicular = 7;
+}
+
+message Summary {
+  float length = 1;          // kilometers or miles based on units
+  double time = 2;           // seconds
+  BoundingBox bbox = 3;      // Bounding box of the shape
+  bool has_time_restrictions = 4; // Does the route contain any time restrictions?
+  bool has_toll = 5;
+  bool has_ferry = 6;
+  bool has_highway = 7;
 }
