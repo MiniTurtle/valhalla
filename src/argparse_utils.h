@@ -52,9 +52,8 @@ bool parse_common_args(const std::string& program,
   } else if (result.count("config") &&
              filesystem::is_regular_file(result["config"].as<std::string>())) {
     conf = valhalla::config(result["config"].as<std::string>());
-  } else {
+  } else 
     throw cxxopts::exceptions::exception("Configuration is required\n\n" + opts.help() + "\n\n");
-  }
 
   // configure logging
   auto logging_subtree = conf.get_child_optional(log);

@@ -225,7 +225,7 @@ public:
    * Set the node type.
    * @param  type  node type.
    */
-  void set_type(const baldr::NodeType type);
+  void set_type(const NodeType type);
 
   /**
    * Checks if this node is a transit node.
