@@ -1,5 +1,4 @@
 #include <boost/optional.hpp>
-#include <utility>
 
 #include "baldr/graphconstants.h"
 #include "midgard/util.h"
@@ -108,8 +107,6 @@ constexpr float kDefaultClosureFactor = 9.0f;
 // non-closure end
 constexpr ranged_default_t<float> kClosureFactorRange{1.0f, kDefaultClosureFactor, 10.0f};
 
-constexpr ranged_default_t<uint32_t> kVehicleSpeedRange{10, baldr::kMaxAssumedSpeed,
-                                                        baldr::kMaxSpeedKph};
 constexpr ranged_default_t<uint32_t> kFixedSpeedRange{0, baldr::kDisableFixedSpeed,
                                                       baldr::kMaxSpeedKph};
 } // namespace
@@ -137,7 +134,9 @@ BaseCostingOptionsConfig::BaseCostingOptionsConfig()
                                                                                   kDefaultUseTracks,
                                                                                   1.f},
       use_living_streets_{0.f, kDefaultUseLivingStreets, 1.f}, use_lit_{0.f, kDefaultUseLit, 1.f},
-      closure_factor_{kClosureFactorRange}, exclude_unpaved_(false),
+      closure_factor_{kClosureFactorRange}, exclude_unpaved_(false), exclude_bridges_(false),
+      exclude_tunnels_(false), exclude_tolls_(false), exclude_highways_(false),
+      exclude_ferries_(false), has_excludes_(false),
       exclude_cash_only_tolls_(false), include_hot_{false}, include_hov2_{false}, include_hov3_{
                                                                                       false} {
 }
@@ -151,6 +150,9 @@ DynamicCost::DynamicCost(const Costing& costing,
       closure_factor_(kDefaultClosureFactor), flow_mask_(kDefaultFlowMask),
       shortest_(costing.options().shortest()),
       ignore_restrictions_(costing.options().ignore_restrictions()),
+      ignore_non_vehicular_restrictions_(costing.options().ignore_non_vehicular_restrictions()),
+      ignore_turn_restrictions_(costing.options().ignore_restrictions() ||
+                                costing.options().ignore_non_vehicular_restrictions()),
       ignore_oneways_(costing.options().ignore_oneways()),
       ignore_access_(costing.options().ignore_access()),
       ignore_closures_(costing.options().ignore_closures()),
@@ -299,6 +301,10 @@ bool DynamicCost::bicycle() const {
   return false;
 }
 
+bool DynamicCost::is_hgv() const {
+  return false;
+}
+
 // Add to the exclude list.
 void DynamicCost::AddToExcludeList(const graph_tile_ptr&) {
 }
@@ -385,6 +391,8 @@ void ParseBaseCostOptions(const rapidjson::Value& json,
   JSON_PBF_DEFAULT(co, false, json, "/ignore_oneways", ignore_oneways);
   JSON_PBF_DEFAULT(co, false, json, "/ignore_access", ignore_access);
   JSON_PBF_DEFAULT(co, false, json, "/ignore_closures", ignore_closures);
+  JSON_PBF_DEFAULT_V2(co, false, json, "/ignore_non_vehicular_restrictions",
+                      ignore_non_vehicular_restrictions);
 
   // shortest
   JSON_PBF_DEFAULT(co, false, json, "/shortest", shortest);
@@ -392,9 +400,6 @@ void ParseBaseCostOptions(const rapidjson::Value& json,
   // disable hierarchy pruning
   co->set_disable_hierarchy_pruning(
       rapidjson::get<bool>(json, "/disable_hierarchy_pruning", co->disable_hierarchy_pruning()));
-
-  // top speed
-  JSON_PBF_RANGED_DEFAULT(co, kVehicleSpeedRange, json, "/top_speed", top_speed);
 
   // destination only penalty
   JSON_PBF_RANGED_DEFAULT(co, cfg.dest_only_penalty_, json, "/destination_only_penalty",
@@ -451,6 +456,12 @@ void ParseBaseCostOptions(const rapidjson::Value& json,
 
   JSON_PBF_DEFAULT(co, cfg.exclude_unpaved_, json, "/exclude_unpaved", exclude_unpaved);
 
+  JSON_PBF_DEFAULT_V2(co, cfg.exclude_bridges_, json, "/exclude_bridges", exclude_bridges);
+  JSON_PBF_DEFAULT_V2(co, cfg.exclude_tunnels_, json, "/exclude_tunnels", exclude_tunnels);
+  JSON_PBF_DEFAULT_V2(co, cfg.exclude_tolls_, json, "/exclude_tolls", exclude_tolls);
+  JSON_PBF_DEFAULT_V2(co, cfg.exclude_highways_, json, "/exclude_highways", exclude_highways);
+  JSON_PBF_DEFAULT_V2(co, cfg.exclude_ferries_, json, "/exclude_ferries", exclude_ferries);
+
   JSON_PBF_DEFAULT(co, cfg.exclude_cash_only_tolls_, json, "/exclude_cash_only_tolls",
                    exclude_cash_only_tolls);
 
@@ -478,23 +489,22 @@ void ParseBaseCostOptions(const rapidjson::Value& json,
   JSON_PBF_DEFAULT(co, cfg.include_hov2_, json, "/include_hov2", include_hov2);
   JSON_PBF_DEFAULT(co, cfg.include_hov3_, json, "/include_hov3", include_hov3);
 
-  co->set_fixed_speed(
-      kFixedSpeedRange(rapidjson::get<uint32_t>(json, "/fixed_speed", co->fixed_speed())));
+  JSON_PBF_RANGED_DEFAULT_V2(co, kFixedSpeedRange, json, "/fixed_speed", fixed_speed);
 }
 
 void ParseCosting(const rapidjson::Document& doc,
                   const std::string& costing_options_key,
                   Options& options) {
-  // if specified, get the costing options in there
-  for (auto i = Costing::Type_MIN; i <= Costing::Type_MAX; i = Costing::Type(i + 1)) {
+  // get the needed costing options in there
+  for (const auto& costing_type : kCostingTypeMapping.at(options.costing_type())) {
     // Create the costing options key
-    const auto& costing_str = valhalla::Costing_Enum_Name(i);
+    const auto& costing_str = valhalla::Costing_Enum_Name(costing_type);
     if (costing_str.empty())
       continue;
     const auto key = costing_options_key + "/" + costing_str;
     // Parse the costing options
-    auto& costing = (*options.mutable_costings())[i];
-    ParseCosting(doc, key, &costing, i);
+    auto& costing = (*options.mutable_costings())[costing_type];
+    ParseCosting(doc, key, &costing, costing_type);
   }
 }
 

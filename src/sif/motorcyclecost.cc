@@ -41,6 +41,8 @@ constexpr float kTCCrossing = 2.0f;
 constexpr float kTCUnfavorable = 2.5f;
 constexpr float kTCUnfavorableSharp = 3.5f;
 constexpr float kTCReverse = 9.5f;
+constexpr float kTCRamp = 1.5f;
+constexpr float kTCRoundabout = 0.5f;
 
 // Turn costs based on side of street driving
 constexpr float kRightSideTurnCosts[] = {kTCStraight,       kTCSlight,  kTCFavorable,
@@ -54,6 +56,8 @@ constexpr float kLeftSideTurnCosts[] = {kTCStraight,         kTCSlight,  kTCUnfa
 constexpr ranged_default_t<float> kUseHighwaysRange{0, kDefaultUseHighways, 1.0f};
 constexpr ranged_default_t<float> kUseTollsRange{0, kDefaultUseTolls, 1.0f};
 constexpr ranged_default_t<float> kUseTrailsRange{0, kDefaultUseTrails, 1.0f};
+constexpr ranged_default_t<uint32_t> kMotorcycleSpeedRange{10, baldr::kMaxAssumedSpeed,
+                                                           baldr::kMaxSpeedKph};
 
 constexpr float kHighwayFactor[] = {
     1.0f, // Motorway
@@ -355,10 +359,10 @@ bool MotorcycleCost::Allowed(const baldr::DirectedEdge* edge,
   // Check access, U-turn, and simple turn restriction.
   // Allow U-turns at dead-end nodes.
   if (!IsAccessible(edge) || (!pred.deadend() && pred.opp_local_idx() == edge->localedgeidx()) ||
-      ((pred.restrictions() & (1 << edge->localedgeidx())) && !ignore_restrictions_) ||
+      ((pred.restrictions() & (1 << edge->localedgeidx())) && !ignore_turn_restrictions_) ||
       (edge->surface() > kMinimumMotorcycleSurface) || IsUserAvoidEdge(edgeid) ||
       (!allow_destination_only_ && !pred.destonly() && edge->destonly()) ||
-      (pred.closure_pruning() && IsClosed(edge, tile))) {
+      (pred.closure_pruning() && IsClosed(edge, tile)) || CheckExclusions(edge, pred)) {
     return false;
   }
 
@@ -379,15 +383,15 @@ bool MotorcycleCost::AllowedReverse(const baldr::DirectedEdge* edge,
   // Check access, U-turn, and simple turn restriction.
   // Allow U-turns at dead-end nodes.
   if (!IsAccessible(opp_edge) || (!pred.deadend() && pred.opp_local_idx() == edge->localedgeidx()) ||
-      ((opp_edge->restrictions() & (1 << pred.opp_local_idx())) && !ignore_restrictions_) ||
+      ((opp_edge->restrictions() & (1 << pred.opp_local_idx())) && !ignore_turn_restrictions_) ||
       (opp_edge->surface() > kMinimumMotorcycleSurface) || IsUserAvoidEdge(opp_edgeid) ||
       (!allow_destination_only_ && !pred.destonly() && opp_edge->destonly()) ||
-      (pred.closure_pruning() && IsClosed(opp_edge, tile))) {
+      (pred.closure_pruning() && IsClosed(opp_edge, tile)) || CheckExclusions(opp_edge, pred)) {
     return false;
   }
 
-  return DynamicCost::EvaluateRestrictions(access_mask_, edge, false, tile, opp_edgeid, current_time,
-                                           tz_index, restriction_idx);
+  return DynamicCost::EvaluateRestrictions(access_mask_, opp_edge, false, tile, opp_edgeid,
+                                           current_time, tz_index, restriction_idx);
 }
 
 Cost MotorcycleCost::EdgeCost(const baldr::DirectedEdge* edge,
@@ -444,7 +448,7 @@ Cost MotorcycleCost::TransitionCost(const baldr::DirectedEdge* edge,
   // destination only, alley, maneuver penalty
   uint32_t idx = pred.opp_local_idx();
   Cost c = base_transition_cost(node, edge, &pred, idx);
-  c.secs = OSRMCarTurnDuration(edge, node, idx);
+  c.secs += OSRMCarTurnDuration(edge, node, idx);
 
   // Transition time = turncost * stopimpact * densityfactor
   if (edge->stopimpact(idx) > 0 && !shortest_) {
@@ -459,9 +463,9 @@ Cost MotorcycleCost::TransitionCost(const baldr::DirectedEdge* edge,
 
     if ((edge->use() != Use::kRamp && pred.use() == Use::kRamp) ||
         (edge->use() == Use::kRamp && pred.use() != Use::kRamp)) {
-      turn_cost += 1.5f;
+      turn_cost += kTCRamp;
       if (edge->roundabout())
-        turn_cost += 0.5f;
+        turn_cost += kTCRoundabout;
     }
 
     float seconds = turn_cost;
@@ -513,7 +517,7 @@ Cost MotorcycleCost::TransitionCostReverse(const uint32_t idx,
   // Get the transition cost for country crossing, ferry, gate, toll booth,
   // destination only, alley, maneuver penalty
   Cost c = base_transition_cost(node, edge, pred, idx);
-  c.secs = OSRMCarTurnDuration(edge, node, pred->opp_local_idx());
+  c.secs += OSRMCarTurnDuration(edge, node, pred->opp_local_idx());
 
   // Transition time = turncost * stopimpact * densityfactor
   if (edge->stopimpact(idx) > 0 && !shortest_) {
@@ -528,9 +532,9 @@ Cost MotorcycleCost::TransitionCostReverse(const uint32_t idx,
 
     if ((edge->use() != Use::kRamp && pred->use() == Use::kRamp) ||
         (edge->use() == Use::kRamp && pred->use() != Use::kRamp)) {
-      turn_cost += 1.5f;
+      turn_cost += kTCRamp;
       if (edge->roundabout())
-        turn_cost += 0.5f;
+        turn_cost += kTCRoundabout;
     }
 
     float seconds = turn_cost;
@@ -578,6 +582,7 @@ void ParseMotorcycleCostOptions(const rapidjson::Document& doc,
   JSON_PBF_RANGED_DEFAULT(co, kUseHighwaysRange, json, "/use_highways", use_highways);
   JSON_PBF_RANGED_DEFAULT(co, kUseTollsRange, json, "/use_tolls", use_tolls);
   JSON_PBF_RANGED_DEFAULT(co, kUseTrailsRange, json, "/use_trails", use_trails);
+  JSON_PBF_RANGED_DEFAULT(co, kMotorcycleSpeedRange, json, "/top_speed", top_speed);
 }
 
 cost_ptr_t CreateMotorcycleCost(const Costing& costing_options) {
@@ -613,7 +618,8 @@ public:
 
 TestMotorcycleCost* make_motorcyclecost_from_json(const std::string& property, float testVal) {
   std::stringstream ss;
-  ss << R"({"costing_options":{"motorcycle":{")" << property << R"(":)" << testVal << "}}}";
+  ss << R"({"costing": "motorcycle", "costing_options":{"motorcycle":{")" << property << R"(":)"
+     << testVal << "}}}";
   Api request;
   ParseApi(ss.str(), valhalla::Options::route, request);
   return new TestMotorcycleCost(request.options().costings().find(Costing::motorcycle)->second);

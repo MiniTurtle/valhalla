@@ -1,11 +1,7 @@
 #include <boost/algorithm/string/replace.hpp>
-#include <boost/property_tree/ptree.hpp>
 #include <cstdint>
-#include <functional>
-#include <sstream>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 #include "baldr/datetime.h"
@@ -213,6 +209,12 @@ std::string serializePbf(Api& request) {
       case Options::sources_to_targets:
         selection.set_matrix(true);
         break;
+      case Options::isochrone:
+        selection.set_isochrone(true);
+        break;
+      case Options::expansion:
+        selection.set_expansion(true);
+        break;
       // should never get here, actions which dont have pbf yet return json
       default:
         throw std::logic_error("Requested action is not yet serializable as pbf");
@@ -238,6 +240,10 @@ std::string serializePbf(Api& request) {
     request.clear_options();
   if (!selection.matrix())
     request.clear_matrix();
+  if (!selection.isochrone())
+    request.clear_isochrone();
+  if (!selection.expansion())
+    request.clear_expansion();
 
   // serialize the bytes
   auto bytes = request.SerializeAsString();
@@ -248,6 +254,20 @@ std::string serializePbf(Api& request) {
   }
 
   return bytes;
+}
+
+// Generate leg shape in geojson format.
+baldr::json::MapPtr geojson_shape(const std::vector<midgard::PointLL> shape) {
+  auto geojson = baldr::json::map({});
+  auto coords = baldr::json::array({});
+  coords->reserve(shape.size());
+  for (const auto& p : shape) {
+    coords->emplace_back(
+        baldr::json::array({baldr::json::fixed_t{p.lng(), 6}, baldr::json::fixed_t{p.lat(), 6}}));
+  }
+  geojson->emplace("type", std::string("LineString"));
+  geojson->emplace("coordinates", coords);
+  return geojson;
 }
 } // namespace tyr
 } // namespace valhalla
@@ -425,7 +445,7 @@ void serializeIncidentProperties(rapidjson::Writer<rapidjson::StringBuffer>& wri
     writer.Key(key_prefix + "alertc_codes");
     writer.StartArray();
     for (const auto& alertc_code : incident_metadata.alertc_codes()) {
-      writer.Int(static_cast<uint64_t>(alertc_code));
+      writer.Uint64(static_cast<uint64_t>(alertc_code));
     }
     writer.EndArray();
   }

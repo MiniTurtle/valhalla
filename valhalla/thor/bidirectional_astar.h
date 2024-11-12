@@ -2,10 +2,7 @@
 #define VALHALLA_THOR_BIDIRECTIONAL_ASTAR_H_
 
 #include <cstdint>
-#include <map>
 #include <memory>
-#include <unordered_map>
-#include <utility>
 #include <vector>
 
 #include <valhalla/baldr/double_bucket_queue.h>
@@ -159,7 +156,7 @@ protected:
    * @return returns true if the expansion continued from this node
    */
   template <const ExpansionType expansion_direction>
-  bool Expand(baldr::GraphReader& graphreader,
+  void Expand(baldr::GraphReader& graphreader,
               const baldr::GraphId& node,
               sif::BDEdgeLabel& pred,
               const uint32_t pred_idx,

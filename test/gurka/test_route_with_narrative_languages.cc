@@ -1,6 +1,5 @@
 #include "gurka.h"
 #include <gtest/gtest.h>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -86,8 +85,8 @@ const std::vector<std::pair<std::string, std::string>> RouteWithNarrativeLanguag
      {"nb-NO", "Ta til høyre inn på Main Street."},
      {"nl", "Sla rechtsaf naar Main Street."},
      {"nl-NL", "Sla rechtsaf naar Main Street."},
-     {"pl", "Skręć w prawo w stronę: Main Street."},
-     {"pl-PL", "Skręć w prawo w stronę: Main Street."},
+     {"pl", "Skręć w prawo w Main Street."},
+     {"pl-PL", "Skręć w prawo w Main Street."},
      {"pt-BR", "Vire à direita para Main Street."},
      {"pt", "Vire à direita em direção à Main Street."},
      {"pt-PT", "Vire à direita em direção à Main Street."},
