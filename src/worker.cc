@@ -688,7 +688,7 @@ void from_json(rapidjson::Document& doc, Options::Action action, Api& api) {
                                                           Options::status,
                                                           Options::sources_to_targets,
                                                           Options::isochrone,
-                                                          Options::expansion
+                                                          Options::expansion,
 														  Options::all_to_all};
     // if its not a pbf supported action we reset to json
     if (pbf_actions.count(options.action()) == 0) {

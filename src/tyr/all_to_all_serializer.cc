@@ -8,7 +8,6 @@
 using namespace valhalla;
 using namespace valhalla::midgard;
 using namespace valhalla::baldr;
-using namespace valhalla::thor;
 
 namespace {
 
