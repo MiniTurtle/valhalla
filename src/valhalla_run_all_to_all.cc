@@ -35,6 +35,8 @@ int main(int argc, char* argv[]) {
     // args
     std::string json_str;
 
+    boost::property_tree::ptree config;
+
     try {
 	    // clang-format off
         cxxopts::Options options(
@@ -59,11 +61,11 @@ int main(int argc, char* argv[]) {
 	    // clang-format on
 
 	    auto result = options.parse(argc, argv);
-	    if (!parse_common_args(program, options, result, "mjolnir.logging"))
+	    if (!parse_common_args(program, options, result, config, "mjolnir.logging"))
 	        return EXIT_SUCCESS;
 
 	    if (!result.count("json")) {
-	        throw cxxopts::OptionException("A JSON format request must be present.\n\n" +
+	        throw cxxopts::exceptions::exception("A JSON format request must be present.\n\n" +
 					       options.help());
 	    }
 	    json_str = result["json"].as<std::string>();
@@ -81,13 +83,13 @@ int main(int argc, char* argv[]) {
                 json_from_file.close();
             }
          }
-    } catch (cxxopts::OptionException& e) {
-	    std::cerr << e.what() << std::endl;
-	    return EXIT_FAILURE;
+    } catch (cxxopts::exceptions::exception& e) {
+        std::cerr << e.what() << std::endl;
+        return EXIT_FAILURE;
     } catch (std::exception& e) {
-	    std::cerr << "Unable to parse command line options because: " << e.what() << "\n"
-		      << "This is a bug, please report it at " PACKAGE_BUGREPORT << "\n";
-	    return EXIT_FAILURE;
+        std::cerr << "Unable to parse command line options because: " << e.what() << "\n"
+                  << "This is a bug, please report it at " PACKAGE_BUGREPORT << std::endl;
+        return EXIT_FAILURE;
     }
 
     Api request;
@@ -96,14 +98,14 @@ int main(int argc, char* argv[]) {
 
     // Find path locations (loki) for sources and targets
     auto t0 = std::chrono::high_resolution_clock::now();
-    loki_worker_t lw(config());
+    loki_worker_t lw(config);
     lw.all_to_all(request);
     auto t1 = std::chrono::high_resolution_clock::now();
     uint32_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(t1 - t0).count();
     LOG_INFO("Location Processing took " + std::to_string(ms) + " ms");
 
     t0 = std::chrono::high_resolution_clock::now();
-    thor_worker_t tw(config());
+    thor_worker_t tw(config);
     std::string result = tw.all_to_all(request);
 
     t1 = std::chrono::high_resolution_clock::now();

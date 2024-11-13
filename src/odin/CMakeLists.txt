@@ -1,17 +1,29 @@
 file(GLOB locale_jsons ${VALHALLA_SOURCE_DIR}/locales *.json)
+# file(GLOB locale_jsons CONFIGURE_DEPENDS ${VALHALLA_SOURCE_DIR}/locales *.json)
 
+# add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/locales.h
+  # COMMAND ${CMAKE_COMMAND} -DMSVC=${MSVC} -P ${VALHALLA_SOURCE_DIR}/cmake/ValhallaBin2Header.cmake ${VALHALLA_SOURCE_DIR}/locales/ ${CMAKE_CURRENT_BINARY_DIR}/locales.h --locales
+  # WORKING_DIRECTORY ${VALHALLA_SOURCE_DIR}
+  # COMMENT "Compiling locales/*.json to locales.h"
+  # DEPENDS ${locale_jsons}
+  # VERBATIM)
+  
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/locales.h
-  # COMMAND ${CMAKE_COMMAND} -DMSVC=${MSVC} -P cmake/Binary2Header.cmake ${VALHALLA_SOURCE_DIR}/locales/ ${CMAKE_CURRENT_BINARY_DIR}/locales.h --locales
-  COMMAND ${CMAKE_COMMAND} -E cmake_echo_color --cyan "Checking if locales.h exists..."
-  COMMAND ${CMAKE_COMMAND} -E env test ! -f ${CMAKE_CURRENT_BINARY_DIR}/locales.h &&
-        #   ${CMAKE_COMMAND} -DMSVC=${MSVC} -P cmake/Binary2Header.cmake ${VALHALLA_SOURCE_DIR}/locales/ ${CMAKE_CURRENT_BINARY_DIR}/locales.h --locales ||
-			${CMAKE_COMMAND} -DMSVC=${MSVC} -P ${VALHALLA_SOURCE_DIR}/cmake/ValhallaBin2Header.cmake ${VALHALLA_SOURCE_DIR}/locales/ ${CMAKE_CURRENT_BINARY_DIR}/locales.h --locales ||
-        ${CMAKE_COMMAND} -E echo "locales.h already exists."
-  WORKING_DIRECTORY ${VALHALLA_SOURCE_DIR}
-  COMMENT "Compiling locales/*.json to locales.h"
-  DEPENDS ${locale_jsons}
-  VERBATIM)
+	COMMAND echo "locales.h"
+)
 
+  
+
+  
+# add_custom_command(
+  # OUTPUT ${VALHALLA_SOURCE_DIR}/locales.timestamp
+  # COMMAND ${CMAKE_COMMAND} -E touch ${VALHALLA_SOURCE_DIR}/locales.timestamp
+  # COMMAND ${CMAKE_COMMAND} -DMSVC=${MSVC} -P ${VALHALLA_SOURCE_DIR}/cmake/ValhallaBin2Header.cmake ${VALHALLA_SOURCE_DIR}/locales/ ${CMAKE_CURRENT_BINARY_DIR}/locales.h --locales
+  # WORKING_DIRECTORY ${VALHALLA_SOURCE_DIR}
+  # COMMENT "Compiling locales/*.json to locales.h"
+  # DEPENDS ${locale_jsons}
+  # VERBATIM)
+  
 file(GLOB headers ${VALHALLA_SOURCE_DIR}/valhalla/odin/*.h)
 
 set(sources
@@ -57,3 +69,13 @@ valhalla_module(NAME odin
     ${valhalla_protobuf_targets}
     Boost::boost
     ${libprime_server_targets})
+	
+add_custom_target(locale ALL
+    DEPENDS ${locale_jsons}
+)
+
+add_custom_command(TARGET locale
+  COMMAND ${CMAKE_COMMAND} -DMSVC=${MSVC} -P ${VALHALLA_SOURCE_DIR}/cmake/ValhallaBin2Header.cmake ${VALHALLA_SOURCE_DIR}/locales/ ${CMAKE_CURRENT_BINARY_DIR}/locales.h --locales
+  WORKING_DIRECTORY ${VALHALLA_SOURCE_DIR}
+  COMMENT "Compiling locales/*.json to locales.h"
+  VERBATIM)
