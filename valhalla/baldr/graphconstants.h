@@ -91,7 +91,8 @@ constexpr uint32_t kMaxDensity = 15;
 constexpr uint8_t kUnlimitedSpeedLimit = std::numeric_limits<uint8_t>::max();
 
 // The max assumed speed we know from static data
-constexpr uint8_t kMaxAssumedSpeed = 140; // ~85 MPH
+//constexpr uint8_t kMaxAssumedSpeed = 140; // ~85 MPH
+constexpr uint8_t kMaxAssumedSpeed = 100;
 // Actual speed from traffic
 constexpr uint8_t kMaxTrafficSpeed = 252; // ~157 MPH
 // Maximum speed. This impacts the effectiveness of A* for driving routes
@@ -99,12 +100,14 @@ constexpr uint8_t kMaxTrafficSpeed = 252; // ~157 MPH
 // clamped to this maximum value.
 constexpr uint32_t kMaxSpeedKph = std::max(kMaxTrafficSpeed, kMaxAssumedSpeed);
 
-constexpr uint32_t kMaxAssumedTruckSpeed = 120; // ~75 MPH
+//constexpr uint32_t kMaxAssumedTruckSpeed = 120; // ~75 MPH
+constexpr uint32_t kMaxAssumedTruckSpeed = 80; // ~75 MPH
 
 // Minimum speed. This is a stop gap for dubious traffic data. While its possible
 // to measure a probe going this slow via stop and go traffic over a long enough
 // stretch, its unlikely to be good signal below this value
-constexpr uint32_t kMinSpeedKph = 5; // ~3 MPH
+//constexpr uint32_t kMinSpeedKph = 5; // ~3 MPH
+constexpr uint32_t kMinSpeedKph = 30; // ~18.6 MPH
 
 // Default Fixed Speed. This is the default fixed speed that is assumed.
 // Unless otherwised specified no fixed speed will be assumed and speed will be

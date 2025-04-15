@@ -654,7 +654,13 @@ int main(int argc, char* argv[]) {
       auto msecs = std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
 
       auto trip_time = trip_directions.summary().time();
-      auto trip_length = trip_directions.summary().length() * 1609.344f;
+      //auto trip_length = trip_directions.summary().length() * 1609.344f;
+      float trip_length = trip_directions.summary().length();
+      if (options.units() == valhalla::Options::miles)
+        trip_length *= 1609.344f;
+      else
+        trip_length *= 1000.0f;
+
       LOG_INFO("trip_processing_time (ms)::" + std::to_string(msecs));
       LOG_INFO("trip_time (secs)::" + std::to_string(trip_time));
       LOG_INFO("trip_length (meters)::" + std::to_string(trip_length));
