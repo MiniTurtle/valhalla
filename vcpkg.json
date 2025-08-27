@@ -17,13 +17,16 @@
       "name": "dirent",
       "platform": "windows"
     },
-    "gdal",
+    {
+      "name": "gdal",
+      "default-features": false,
+      "features": ["recommended-features"]
+    },
     "geos",
     "libspatialite",
     "pkgconf",
     "pybind11",
     "rapidjson",
-    "robin-hood-hashing",
     "spatialite-tools",
     "luajit",
     "lz4",

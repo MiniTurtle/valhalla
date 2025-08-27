@@ -21,7 +21,7 @@ AlwaysBreakBeforeMultilineStrings: false
 AlwaysBreakTemplateDeclarations: false
 BinPackArguments: true
 BinPackParameters: false
-BraceWrapping:   
+BraceWrapping:
   AfterClass:      false
   AfterControlStatement: false
   AfterEnum:       false
@@ -47,13 +47,23 @@ DerivePointerAlignment: false
 DisableFormat:   false
 ExperimentalAutoDetectBinPacking: false
 ForEachMacros:   [ foreach, Q_FOREACH, BOOST_FOREACH ]
+IncludeBlocks: Regroup
 IncludeCategories:
-  - Regex:           '^<'
-    Priority:        3
-  - Regex:           '^"(valhalla)/(baldr|bindings|loki|meili|midgard|mjolnir|odin|proto|sif|skadi|thor|tyr")'
+  - Regex:           '^"'
+    Priority:        0
+    SortPriority:    1
+  - Regex:           '^<valhalla/'
     Priority:        2
+  - Regex:           '^<(boost|protobuf|sqlite3|curl|zmq)/'
+    Priority:        3
+  - Regex:           '^<.*\.h>'
+    Priority:        3
+  - Regex:           '^<.*\.hpp>'
+    Priority:        3
+  - Regex:           '^<'
+    Priority:        4
   - Regex:           '.*'
-    Priority:        1
+    Priority:        5
 IndentCaseLabels: true
 IndentWidth:     4
 IndentWrappedFunctionNames: false
@@ -89,4 +99,3 @@ TabWidth:        8
 UseTab:          Always
 BreakStringLiterals: false
 ...
-

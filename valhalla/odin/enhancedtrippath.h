@@ -1,6 +1,13 @@
 #ifndef VALHALLA_ODIN_ENHANCEDTRIPPATH_H_
 #define VALHALLA_ODIN_ENHANCEDTRIPPATH_H_
 
+#include <valhalla/baldr/turn.h>
+#include <valhalla/midgard/logging.h>
+#include <valhalla/proto/directions.pb.h>
+#include <valhalla/proto/options.pb.h>
+#include <valhalla/proto/sign.pb.h>
+#include <valhalla/proto/trip.pb.h>
+
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -9,12 +16,6 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
-
-#include <valhalla/baldr/turn.h>
-#include <valhalla/proto/directions.pb.h>
-#include <valhalla/proto/options.pb.h>
-#include <valhalla/proto/sign.pb.h>
-#include <valhalla/proto/trip.pb.h>
 
 namespace valhalla {
 namespace odin {
@@ -78,6 +79,10 @@ public:
 
   uint32_t leg_count() const {
     return trip_path_.leg_count();
+  }
+
+  const ::google::protobuf::RepeatedPtrField<::valhalla::LevelChange>& level_changes() const {
+    return trip_path_.level_changes();
   }
 
   const ::google::protobuf::RepeatedPtrField<::valhalla::Location>& location() const {
@@ -362,6 +367,16 @@ public:
 
   bool indoor() const {
     return mutable_edge_->indoor();
+  }
+
+  const google::protobuf::RepeatedPtrField<valhalla::TripLeg_Edge_Level>& levels() const {
+    return mutable_edge_->levels();
+  }
+
+  bool traverses_levels() const {
+    return !mutable_edge_->levels().empty() &&
+           (mutable_edge_->levels().size() > 1 ||
+            mutable_edge_->levels()[0].start() != mutable_edge_->levels()[0].end());
   }
 
   bool IsUnnamed() const;

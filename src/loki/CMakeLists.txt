@@ -22,7 +22,7 @@ set(sources_with_warnings
   trace_route_action.cc
   worker.cc)
 
-set(system_includes 
+set(system_includes
   ${date_include_dir}
   $<$<BOOL:${WIN32}>:${dirent_include_dir}>)
 
@@ -40,6 +40,8 @@ valhalla_module(NAME loki
   SYSTEM_INCLUDE_DIRECTORIES
     PUBLIC
       ${system_includes}
+    PRIVATE
+      ${unordered_dense_include_dir}
   DEPENDS
     valhalla::skadi
     valhalla::sif

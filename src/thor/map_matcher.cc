@@ -1,11 +1,8 @@
-#include "midgard/logging.h"
-#include <algorithm>
-#include <vector>
-
+#include "thor/map_matcher.h"
 #include "baldr/datetime.h"
 #include "baldr/time_info.h"
-#include "thor/map_matcher.h"
-#include "thor/worker.h"
+
+#include <vector>
 
 using namespace valhalla::baldr;
 using namespace valhalla::sif;
@@ -247,7 +244,8 @@ MapMatcher::FormPath(meili::MapMatcher* matcher,
     // get the cost of traversing the node, there is no turn cost the first time
     Cost transition_cost{};
     if (elapsed.secs > 0) {
-      transition_cost = costing->TransitionCost(directededge, nodeinfo, pred);
+      auto reader_getter = [&matcher]() { return baldr::LimitedGraphReader(matcher->graphreader()); };
+      transition_cost = costing->TransitionCost(directededge, nodeinfo, pred, tile, reader_getter);
       elapsed += transition_cost;
     }
 
