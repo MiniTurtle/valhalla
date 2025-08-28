@@ -1157,6 +1157,7 @@ json::MapPtr osrm_maneuver(const valhalla::DirectionsLeg::Maneuver& maneuver,
   osrm_man->emplace("bearing_before", static_cast<uint64_t>(in_brg));
   osrm_man->emplace("bearing_after", static_cast<uint64_t>(out_brg));
   osrm_man->emplace("type", maneuver_type);
+  osrm_man->emplace("speed_limit", static_cast<uint64_t>(maneuver.speed_limit()));
 
   if (emplace_instructions) {
     osrm_man->emplace("instruction", maneuver.text_instruction());

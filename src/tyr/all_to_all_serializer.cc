@@ -4,6 +4,7 @@
 #include "tyr/serializers.h"
 
 #include <cstdint>
+#include <sstream>
 
 using namespace valhalla;
 using namespace valhalla::midgard;

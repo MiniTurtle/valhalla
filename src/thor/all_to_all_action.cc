@@ -8,6 +8,7 @@
 #include "tyr/serializers.h"
 #include "config.h"
 #include <condition_variable>
+#include <thread>
 
 using namespace valhalla;
 using namespace valhalla::tyr;

@@ -335,6 +335,7 @@ void legs(valhalla::Api& api, int route_index, rapidjson::writer_wrapper_t& writ
       writer.set_precision(length_prec);
       writer("length", maneuver.length());
       writer.set_precision(tyr::kDefaultPrecision);
+      writer("speed_limit", maneuver.speed_limit());
       writer("cost", cost);
       writer("begin_shape_index", maneuver.begin_shape_index());
       writer("end_shape_index", maneuver.end_shape_index());

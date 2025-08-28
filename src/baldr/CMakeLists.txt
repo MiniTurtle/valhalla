@@ -4,17 +4,19 @@ set(tz_db_files africa antarctica asia australasia backward etcetera europe
 
 # Select make command based on platform
 if(WIN32)
-  set(MAKE_CMD nmake)
+  # set(MAKE_CMD nmake)
 else()
   set(MAKE_CMD make)
+  
+  # Process the leap seconds file (it's in .gitignore of the tz repo)
+	add_custom_command(OUTPUT ${VALHALLA_SOURCE_DIR}/third_party/tz/leapseconds
+	COMMAND ${MAKE_CMD} leapseconds
+	WORKING_DIRECTORY ${VALHALLA_SOURCE_DIR}/third_party/tz
+	COMMENT "Compiling third_party/tz/leapseconds with awk"
+	DEPENDS ${VALHALLA_SOURCE_DIR}/third_party/tz/leapseconds.awk)
 endif()
 
-# Process the leap seconds file (it's in .gitignore of the tz repo)
-add_custom_command(OUTPUT ${VALHALLA_SOURCE_DIR}/third_party/tz/leapseconds
-COMMAND ${MAKE_CMD} leapseconds
-WORKING_DIRECTORY ${VALHALLA_SOURCE_DIR}/third_party/tz
-COMMENT "Compiling third_party/tz/leapseconds with awk"
-DEPENDS ${VALHALLA_SOURCE_DIR}/third_party/tz/leapseconds.awk)
+
 
 foreach(tz_db_file ${tz_db_files})
   add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/date_time_${tz_db_file}.h

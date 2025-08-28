@@ -132,6 +132,7 @@ message DirectionsLeg {
     bool portions_highway = 39;                           // has portions highway
     bool portions_ferry = 40;                             // has portions ferry
     repeated RouteLandmark landmarks = 41;                // landmarks correlated with the maneuver
+	uint32 speed_limit = 42;
   }
 
   uint64 trip_id = 1;

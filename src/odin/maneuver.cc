@@ -116,7 +116,7 @@ namespace odin {
 
 Maneuver::Maneuver()
     : type_(DirectionsLeg_Maneuver_Type_kNone), has_node_type_(false), traffic_signal_(false),
-      is_steps_(false), is_bridge_(false), is_tunnel_(false), length_(0.0f), time_(0), basic_time_(0),
+      is_steps_(false), is_bridge_(false), is_tunnel_(false), length_(0.0f), speed_limit_(0), time_(0), basic_time_(0),
       turn_degree_(0), begin_relative_direction_(RelativeDirection::kNone),
       begin_cardinal_direction_(DirectionsLeg_Maneuver_CardinalDirection_kNorth), begin_heading_(0),
       end_heading_(0), begin_node_index_(0), end_node_index_(0), begin_shape_index_(0),
@@ -357,6 +357,17 @@ float Maneuver::length(const Options::Units& units) const {
 
 void Maneuver::set_length(float km_length) {
   length_ = km_length;
+}
+
+void Maneuver::set_speed_limit(uint32_t speed_limit) {
+    speed_limit_ = speed_limit;
+}
+
+uint32_t Maneuver::speed_limit(const Options::Units& units) const {
+    if (units == Options::miles) {
+        return (speed_limit_ * midgard::kMilePerKm);
+    }
+    return speed_limit_;
 }
 
 double Maneuver::time() const {

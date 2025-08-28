@@ -859,6 +859,9 @@ ManeuversBuilder::CombineManeuvers(std::list<Maneuver>& maneuvers,
 
   // Add time
   curr_man->set_time(curr_man->time() + next_man->time());
+  
+  // Add speed limit
+  curr_man->set_speed_limit(next_man->speed_limit(valhalla::Options::Units::Options_Units_kilometers));
 
   // Add basic time
   curr_man->set_basic_time(curr_man->basic_time() + next_man->basic_time());
@@ -1170,6 +1173,9 @@ void ManeuversBuilder::InitializeManeuver(Maneuver& maneuver, int node_index) {
     }
   }
 
+  // Speed limit
+  maneuver.set_speed_limit(prev_edge->speed_limit());
+  
   // Elevator
   if (prev_edge->IsElevatorUse()) {
     maneuver.set_elevator(true);
