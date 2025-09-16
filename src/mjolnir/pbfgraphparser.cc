@@ -893,12 +893,13 @@ struct graph_parser {
       try {
         if (tag_.second == "unlimited") {
           // this way has an unlimited speed limit (german autobahn)
-          max_speed_ = kUnlimitedSpeedLimit;
+          //max_speed_ = kUnlimitedSpeedLimit;
         } else {
           max_speed_ = std::stof(tag_.second);
+          way_.set_tagged_speed(true);
+          has_max_speed_ = true;
         }
-        way_.set_tagged_speed(true);
-        has_max_speed_ = true;
+        
       } catch (const std::out_of_range& oor) {
         LOG_INFO("out_of_range thrown for way id: " + std::to_string(osmid_));
       }
@@ -3048,6 +3049,40 @@ struct graph_parser {
       }
     }
 
+    // ferries / auto trains need to be set to highway cut off in config.
+    if (way_.ferry() || way_.rail()) {
+      way_.set_road_class(highway_cutoff_rc_);
+    }
+
+    if (!has_max_speed_) {
+        switch (way_.road_class()) {
+          case RoadClass::kMotorway:
+               max_speed_ = kRoadClassDefaultSpeedLimit_Motorway;
+               has_max_speed_ = true;
+               break;
+          case RoadClass::kTrunk:
+               max_speed_ = kRoadClassDefaultSpeedLimit_Trunk;
+               has_max_speed_ = true;
+               break;
+          case RoadClass::kPrimary:
+               max_speed_ = kRoadClassDefaultSpeedLimit_Primary;
+               has_max_speed_ = true;
+               break;
+          case RoadClass::kSecondary:
+               max_speed_ = kRoadClassDefaultSpeedLimit_Secondary;
+               has_max_speed_ = true;
+               break;
+          case RoadClass::kTertiary:
+               max_speed_ = kRoadClassDefaultSpeedLimit_Tertiary;
+               has_max_speed_ = true;
+               break; 
+          case RoadClass::kResidential:
+               max_speed_ = kRoadClassDefaultSpeedLimit_Residential;
+               has_max_speed_ = true;
+               break;
+        }
+    }
+
     // set the speed
     if (has_average_speed_) {
       way_.set_speed(average_speed_);
@@ -3079,11 +3114,6 @@ struct graph_parser {
         way_.set_forward_tagged_speed(true);
       } else // fallback to default speed.
         way_.set_speed(default_speed_);
-    }
-
-    // ferries / auto trains need to be set to highway cut off in config.
-    if (way_.ferry() || way_.rail()) {
-      way_.set_road_class(highway_cutoff_rc_);
     }
 
     // Delete the name from from name field if it exists in the ref.

@@ -602,7 +602,8 @@ void BuildTileSet(const std::string& ways_file,
             speed = kMaxAssumedSpeed;
           }
           uint32_t speed_limit = w.speed_limit();
-          if (speed_limit > kMaxAssumedSpeed && speed_limit != kUnlimitedSpeedLimit) {
+          //if (speed_limit > kMaxAssumedSpeed && speed_limit != kUnlimitedSpeedLimit) {
+          if (speed_limit > kMaxAssumedSpeed) {
             LOG_WARN("Speed limit = " + std::to_string(speed_limit) +
                      " wayId= " + std::to_string(w.way_id()));
             speed_limit = kMaxAssumedSpeed;

@@ -91,8 +91,7 @@ constexpr uint32_t kMaxDensity = 15;
 constexpr uint8_t kUnlimitedSpeedLimit = std::numeric_limits<uint8_t>::max();
 
 // The max assumed speed we know from static data
-//constexpr uint8_t kMaxAssumedSpeed = 140; // ~85 MPH
-constexpr uint8_t kMaxAssumedSpeed = 100;
+constexpr uint8_t kMaxAssumedSpeed = 140; // ~85 MPH
 // Actual speed from traffic
 constexpr uint8_t kMaxTrafficSpeed = 252; // ~157 MPH
 // Maximum speed. This impacts the effectiveness of A* for driving routes
@@ -126,6 +125,14 @@ constexpr uint32_t kMaxFerrySpeedKph = 40; // 21 knots
 constexpr uint32_t kParkingAisleSpeed = 15; // 15 KPH (10MPH)
 constexpr uint32_t kDriveThruSpeed = 10;    // 10 KPH
 constexpr uint32_t kDrivewaySpeed = 10;     // 10 KPH
+
+
+constexpr uint32_t kRoadClassDefaultSpeedLimit_Motorway = 80;
+constexpr uint32_t kRoadClassDefaultSpeedLimit_Trunk = 80;
+constexpr uint32_t kRoadClassDefaultSpeedLimit_Primary = 60;
+constexpr uint32_t kRoadClassDefaultSpeedLimit_Secondary = 50;
+constexpr uint32_t kRoadClassDefaultSpeedLimit_Tertiary = 50;
+constexpr uint32_t kRoadClassDefaultSpeedLimit_Residential = 40;
 
 // Road class or importance of an edge
 enum class RoadClass : uint8_t {

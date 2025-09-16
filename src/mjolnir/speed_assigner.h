@@ -23,14 +23,14 @@ constexpr uint32_t kMaxRuralDensity = 8;
 
 // Default speeds (kph) in urban areas per road class
 constexpr uint32_t urban_rc_speed[] = {
-    89, // 55 MPH - motorway
-    73, // 45 MPH - trunk
-    57, // 35 MPH - primary
-    49, // 30 MPH - secondary
-    40, // 25 MPH - tertiary
-    35, // 22 MPH - unclassified
-    30, // 20 MPH - residential
-    20, // 13 MPH - service/other
+    80, //89, // 55 MPH - motorway
+    80, //73, // 45 MPH - trunk
+    60, //57, // 35 MPH - primary
+    60, //49, // 30 MPH - secondary
+    50, //40, // 25 MPH - tertiary
+    30, //35, // 22 MPH - unclassified
+    40, //30, // 20 MPH - residential
+    20, //20, // 13 MPH - service/other
 };
 
 /*
