@@ -569,6 +569,8 @@ int main(int argc, char* argv[]) {
   LOG_INFO("Location Worker construction took " + std::to_string(msw) + " ms");
 
   auto tl0 = std::chrono::high_resolution_clock::now();
+  //
+  // Fill in location data into options.locations by searching graph tiles.
   lw.route(request);
   auto tl1 = std::chrono::high_resolution_clock::now();
   auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(tl1 - tl0).count();

@@ -3080,6 +3080,8 @@ struct graph_parser {
                max_speed_ = kRoadClassDefaultSpeedLimit_Residential;
                has_max_speed_ = true;
                break;
+	      default:
+               break;
         }
     }
 
