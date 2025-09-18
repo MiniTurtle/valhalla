@@ -50,37 +50,37 @@ void actor_t::cleanup() {
   pimpl->cleanup();
 }
 
-std::string actor_t::act(Api& api, const std::function<void()>* interrupt) {
+std::string actor_t::act(Api& api, const std::function<void()>* interrupt, std::string request_str) {
   if (api.options().action() == Options::no_action)
     throw valhalla_exception_t{106};
 
   switch (api.options().action()) {
     case Options::route:
-      return route("", interrupt, &api);
+      return route(request_str, interrupt, &api);
     case Options::locate:
-      return locate("", interrupt, &api);
+      return locate(request_str, interrupt, &api);
     case Options::sources_to_targets:
-      return matrix("", interrupt, &api);
+      return matrix(request_str, interrupt, &api);
     case Options::all_to_all:
-      return all_to_all("", interrupt, &api);
+      return all_to_all(request_str, interrupt, &api);
     case Options::optimized_route:
-      return optimized_route("", interrupt, &api);
+      return optimized_route(request_str, interrupt, &api);
     case Options::isochrone:
-      return isochrone("", interrupt, &api);
+      return isochrone(request_str, interrupt, &api);
     case Options::trace_route:
-      return trace_route("", interrupt, &api);
+      return trace_route(request_str, interrupt, &api);
     case Options::trace_attributes:
-      return trace_attributes("", interrupt, &api);
+      return trace_attributes(request_str, interrupt, &api);
     case Options::height:
-      return height("", interrupt, &api);
+      return height(request_str, interrupt, &api);
     case Options::transit_available:
-      return transit_available("", interrupt, &api);
+      return transit_available(request_str, interrupt, &api);
     case Options::expansion:
-      return expansion("", interrupt, &api);
+      return expansion(request_str, interrupt, &api);
     case Options::centroid:
-      return centroid("", interrupt, &api);
+      return centroid(request_str, interrupt, &api);
     case Options::status:
-      return status("", interrupt, &api);
+      return status(request_str, interrupt, &api);
     default:
       throw valhalla_exception_t{106};
   }

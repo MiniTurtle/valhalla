@@ -43,7 +43,7 @@ public:
    * @param interrupt  allows the underlying computation to be aborted via the functor throwing
    * @return json or pbf bytes depending on what was specified in the options object
    */
-  std::string act(Api& api, const std::function<void()>* interrupt = nullptr);
+  std::string act(Api& api, const std::function<void()>* interrupt = nullptr, std::string request_str = "");
 
   /**
    * Perform the route action and return json or protobuf depending on which was requested. The
