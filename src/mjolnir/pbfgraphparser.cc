@@ -3057,7 +3057,7 @@ struct graph_parser {
       way_.set_road_class(highway_cutoff_rc_);
     }
 
-    if (use_road_class_speed_fallback_ && !has_max_speed_) {
+    if (use_road_class_speed_fallback_ && (!has_max_speed_ || max_speed_ == 0)) {
         switch (way_.road_class()) {
           case RoadClass::kMotorway:
                max_speed_ = kRoadClassDefaultSpeedLimit_Motorway;

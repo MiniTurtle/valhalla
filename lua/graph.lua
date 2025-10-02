@@ -48,9 +48,8 @@ road_class = {
 ["tertiary_link"] = 4,
 ["unclassified"] = 5,
 ["residential"] = 6,
-["residential_link"] = 6
+["residential_link"] = 6,
 ["living_street"] = 6
-["service"] = 7
 }
 
 restriction = {
@@ -78,15 +77,24 @@ restriction = {
 -- [6] = 35,
 -- [7] = 25
 -- }
+-- [0] kMotorway
+-- [1] kTrunk
+-- [2] kPrimary
+-- [3] kSecondary
+-- [4] kTertiary
+-- [5] kUnclassified
+-- [6] kResidential
+-- [7] kServiceOther
+
 default_speed = {
-[0] = 100, -- kMotorway
-[1] = 80, -- kTrunk
-[2] = 80, -- kPrimary
-[3] = 80, -- kSecondary
-[4] = 60, -- kTertiary
-[5] = 40, -- kUnclassified
-[6] = 50, -- kResidential
-[7] = 20  -- kServiceOther
+[0] = 100,
+[1] = 80,
+[2] = 80,
+[3] = 80,
+[4] = 60,
+[5] = 40,
+[6] = 50,
+[7] = 20
 }
 
 access = {

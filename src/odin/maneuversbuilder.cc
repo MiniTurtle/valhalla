@@ -1369,7 +1369,8 @@ void ManeuversBuilder::UpdateManeuver(Maneuver& maneuver, int node_index) {
       maneuver.basic_time() +
       GetTime(prev_edge->length_km(), GetSpeed(maneuver.travel_mode(), prev_edge->default_speed())));
 
-  //maneuver.set_speed(GetSpeed(maneuver.travel_mode(), prev_edge->default_speed()));
+ /* maneuver.set_speed_limit(prev_edge->speed_limit());
+  maneuver.set_speed(GetSpeed(maneuver.travel_mode(), prev_edge->default_speed()));*/
 
   // Portions Toll
   if (prev_edge->toll()) {
