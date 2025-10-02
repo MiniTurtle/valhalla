@@ -108,6 +108,7 @@ void DirectionsBuilder::PopulateDirectionsLeg(const Options& options,
     trip_maneuver->set_begin_path_index(maneuver.begin_node_index());
     trip_maneuver->set_end_path_index(maneuver.end_node_index());
     trip_maneuver->set_speed_limit(maneuver.speed_limit(options.units()));
+    trip_maneuver->set_speed(maneuver.speed(options.units()));
 
     // Set street names
     for (const auto& street_name : maneuver.street_names()) {

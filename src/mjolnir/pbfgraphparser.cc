@@ -1179,6 +1179,8 @@ struct graph_parser {
     };
     tag_handlers_["default_speed"] = [this]() {
       try {
+        //
+        // From lua script
         default_speed_ = std::stof(tag_.second);
         has_default_speed_ = true;
       } catch (const std::out_of_range& oor) {
@@ -3079,6 +3081,14 @@ struct graph_parser {
                break; 
           case RoadClass::kResidential:
                max_speed_ = kRoadClassDefaultSpeedLimit_Residential;
+               has_max_speed_ = true;
+               break;
+          case RoadClass::kServiceOther:
+               max_speed_ = kRoadClassDefaultSpeedLimit_ServiceOther;
+               has_max_speed_ = true;
+               break;
+          case RoadClass::kUnclassified:
+               max_speed_ = kRoadClassDefaultSpeedLimit_Unclassified;
                has_max_speed_ = true;
                break;
 	      default:

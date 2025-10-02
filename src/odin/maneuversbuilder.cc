@@ -712,6 +712,12 @@ std::list<Maneuver>::iterator ManeuversBuilder::CombineUnspecifiedInternalManeuv
   // Add time
   next_man->set_time(next_man->time() + curr_man->time());
 
+   // Add speed limit
+  next_man->set_speed_limit(curr_man->speed_limit(valhalla::Options::Units::Options_Units_kilometers));
+  
+  // Add speed
+  next_man->set_speed(curr_man->speed(valhalla::Options::Units::Options_Units_kilometers));
+
   // Add basic time
   next_man->set_basic_time(next_man->basic_time() + curr_man->basic_time());
 
@@ -776,6 +782,12 @@ ManeuversBuilder::CombineInternalManeuver(std::list<Maneuver>& maneuvers,
   // Add basic time
   next_man->set_basic_time(next_man->basic_time() + curr_man->basic_time());
 
+   // Add speed limit
+  next_man->set_speed_limit(curr_man->speed_limit(valhalla::Options::Units::Options_Units_kilometers));
+  
+  // Add speed
+  next_man->set_speed(curr_man->speed(valhalla::Options::Units::Options_Units_kilometers));
+
   // TODO - heading?
 
   // Set begin node index
@@ -818,6 +830,12 @@ ManeuversBuilder::CombineTurnChannelManeuver(std::list<Maneuver>& maneuvers,
 
   // Add distance
   next_man->set_length(next_man->length() + curr_man->length());
+
+  // Add speed limit
+  next_man->set_speed_limit(curr_man->speed_limit(valhalla::Options::Units::Options_Units_kilometers));
+  
+  // Add speed
+  next_man->set_speed(curr_man->speed(valhalla::Options::Units::Options_Units_kilometers));
 
   // Add time
   next_man->set_time(next_man->time() + curr_man->time());
@@ -862,6 +880,9 @@ ManeuversBuilder::CombineManeuvers(std::list<Maneuver>& maneuvers,
   
   // Add speed limit
   curr_man->set_speed_limit(next_man->speed_limit(valhalla::Options::Units::Options_Units_kilometers));
+  
+  // Add speed
+  curr_man->set_speed(next_man->speed(valhalla::Options::Units::Options_Units_kilometers));
 
   // Add basic time
   curr_man->set_basic_time(curr_man->basic_time() + next_man->basic_time());
@@ -1175,6 +1196,8 @@ void ManeuversBuilder::InitializeManeuver(Maneuver& maneuver, int node_index) {
 
   // Speed limit
   maneuver.set_speed_limit(prev_edge->speed_limit());
+  // Speed
+  maneuver.set_speed(prev_edge->speed());
   
   // Elevator
   if (prev_edge->IsElevatorUse()) {
@@ -1345,6 +1368,8 @@ void ManeuversBuilder::UpdateManeuver(Maneuver& maneuver, int node_index) {
   maneuver.set_basic_time(
       maneuver.basic_time() +
       GetTime(prev_edge->length_km(), GetSpeed(maneuver.travel_mode(), prev_edge->default_speed())));
+
+  //maneuver.set_speed(GetSpeed(maneuver.travel_mode(), prev_edge->default_speed()));
 
   // Portions Toll
   if (prev_edge->toll()) {

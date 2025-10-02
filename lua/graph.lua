@@ -49,6 +49,8 @@ road_class = {
 ["unclassified"] = 5,
 ["residential"] = 6,
 ["residential_link"] = 6
+["living_street"] = 6
+["service"] = 7
 }
 
 restriction = {
@@ -66,15 +68,25 @@ restriction = {
 
 --the default speed for tracks is lowered after
 --the call to default_speed
+-- default_speed = {
+-- [0] = 105,
+-- [1] = 90,
+-- [2] = 75,
+-- [3] = 60,
+-- [4] = 50,
+-- [5] = 40,
+-- [6] = 35,
+-- [7] = 25
+-- }
 default_speed = {
-[0] = 105,
-[1] = 90,
-[2] = 75,
-[3] = 60,
-[4] = 50,
-[5] = 40,
-[6] = 35,
-[7] = 25
+[0] = 100, -- kMotorway
+[1] = 80, -- kTrunk
+[2] = 80, -- kPrimary
+[3] = 80, -- kSecondary
+[4] = 60, -- kTertiary
+[5] = 40, -- kUnclassified
+[6] = 50, -- kResidential
+[7] = 20  -- kServiceOther
 }
 
 access = {

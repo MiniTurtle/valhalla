@@ -102,6 +102,9 @@ public:
 
   void set_speed_limit(uint32_t speed_limit);
   uint32_t speed_limit(const Options::Units& units) const;
+  
+  void set_speed(uint32_t speed);
+  uint32_t speed(const Options::Units& units) const;
 
   // Seconds
   double time() const;
@@ -432,6 +435,7 @@ protected:
   std::string instruction_;
   float length_;      // Kilometers
   uint32_t speed_limit_;
+  uint32_t speed_;
   double time_;       // Seconds
   double basic_time_; // len/speed on each edge with no stop impact in seconds
   uint32_t turn_degree_;

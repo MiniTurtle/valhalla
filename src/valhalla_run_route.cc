@@ -334,6 +334,10 @@ valhalla::DirectionsLeg DirectionsTest(valhalla::Api& api,
     valhalla::midgard::logging::Log((boost::format("speed limit %zu") %
                                      maneuver.speed_limit()).str(),
                                     " [NARRATIVE] ");
+    
+    valhalla::midgard::logging::Log((boost::format("speed %zu") %
+                                     maneuver.speed()).str(),
+                                    " [NARRATIVE] ");
 
     // Turn lanes
     // Only for driving and no start/end maneuvers

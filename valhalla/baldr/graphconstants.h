@@ -127,12 +127,14 @@ constexpr uint32_t kDriveThruSpeed = 10;    // 10 KPH
 constexpr uint32_t kDrivewaySpeed = 10;     // 10 KPH
 
 
-constexpr uint32_t kRoadClassDefaultSpeedLimit_Motorway = 80;
+constexpr uint32_t kRoadClassDefaultSpeedLimit_Motorway = 100;
 constexpr uint32_t kRoadClassDefaultSpeedLimit_Trunk = 80;
-constexpr uint32_t kRoadClassDefaultSpeedLimit_Primary = 60;
-constexpr uint32_t kRoadClassDefaultSpeedLimit_Secondary = 50;
-constexpr uint32_t kRoadClassDefaultSpeedLimit_Tertiary = 50;
-constexpr uint32_t kRoadClassDefaultSpeedLimit_Residential = 40;
+constexpr uint32_t kRoadClassDefaultSpeedLimit_Primary = 80;
+constexpr uint32_t kRoadClassDefaultSpeedLimit_Secondary = 80;
+constexpr uint32_t kRoadClassDefaultSpeedLimit_Tertiary = 60;
+constexpr uint32_t kRoadClassDefaultSpeedLimit_Unclassified = 40;
+constexpr uint32_t kRoadClassDefaultSpeedLimit_Residential = 50;
+constexpr uint32_t kRoadClassDefaultSpeedLimit_ServiceOther = 20;
 
 // Road class or importance of an edge
 enum class RoadClass : uint8_t {

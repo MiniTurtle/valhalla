@@ -119,7 +119,7 @@ int main(int argc, char* argv[]) {
     }
 
     try {
-        auto actor = tyr::actor_t::actor_t(config, true);
+        valhalla::tyr::actor_t actor(config);
 
         valhalla::Api request;
         auto& options = *request.mutable_options();

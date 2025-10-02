@@ -903,6 +903,9 @@ std::string EnhancedTripLeg_Edge::ToString() const {
 
   str += " | speed_limit=";
   str += std::to_string(speed_limit());
+  
+  str += " | speed=";
+  str += std::to_string(speed());
 
   str += " | truck_speed=";
   str += std::to_string(truck_speed());
