@@ -1019,6 +1019,10 @@ void enhance(const boost::property_tree::ptree& pt,
   GraphReader reader(hierarchy_properties);
 
   // Config driven speed assignment
+  bool skip_speed_assigner =
+      pt.get<bool>("skip_speed_assigner", false);
+  if (skip_speed_assigner)
+      LOG_INFO("Skip speed assigner...");
   auto speeds_config = pt.get_optional<std::string>("default_speeds_config");
   SpeedAssigner speed_assigner(speeds_config);
 
@@ -1304,8 +1308,9 @@ void enhance(const boost::property_tree::ptree& pt,
         directededge.set_named(names.size() > 0);
 
         // Speed assignment
-        speed_assigner.UpdateSpeed(directededge, density, infer_turn_channels, end_node_code,
-                                   end_node_state_code);
+        if (!skip_speed_assigner)
+            speed_assigner.UpdateSpeed(directededge, density, infer_turn_channels, end_node_code,
+                                       end_node_state_code);
 
         // Name continuity - on the directededge.
         uint32_t ntrans = nodeinfo.local_edge_count();
