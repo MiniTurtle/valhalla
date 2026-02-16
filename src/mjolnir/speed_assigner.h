@@ -320,6 +320,10 @@ public:
       } else {
         directededge.set_speed(30); // 15 knots
       }
+
+      if (directededge.speed() <= 1)
+          directededge.set_speed(30);
+
       return false;
     }
 

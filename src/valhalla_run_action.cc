@@ -19,6 +19,7 @@
 #include "thor/triplegbuilder.h"
 #include "thor/unidirectional_astar.h"
 #include "worker.h"
+#include "baldr/rapidjson_utils.h"
 
 #include <boost/format.hpp>
 #include <cxxopts.hpp>
@@ -61,7 +62,7 @@ int main(int argc, char* argv[]) {
             "Headquarters\",\"street\":\"405 East 42nd Street\",\"city\":\"New "
             "York\",\"state\":\"NY\",\"postal_code\":\"10017-3507\",\"country\":\"US\"}],\"costing\":"
             "\"auto\",\"directions_options\":{\"units\":\"miles\"}}'", cxxopts::value<std::string>())
-          ("json-file", "File containing the JSON query", cxxopts::value<std::string>())
+          ("f,json-file", "File containing the JSON query", cxxopts::value<std::string>())
           ("c,config", "Valhalla configuration file", cxxopts::value<std::string>())
           ("i,inline-config", "Inline JSON config", cxxopts::value<std::string>())
           ("a,action", "Action type: route, locate, sources_to_targets, all_to_all, optimized_route, isochrone, trace_route, trace_attributes, height, transit_available, expansion, centroid & status", cxxopts::value<std::string>());
@@ -127,6 +128,18 @@ int main(int argc, char* argv[]) {
         //valhalla::ParseApi(json_str, action, request);
 
         std::string result = actor.act(request, nullptr, json_str);
+#ifdef _DEBUG
+        //
+        // If in debug mode, print pretty json
+        rapidjson::Document doc;
+        doc.Parse(result);
+        rapidjson::StringBuffer buffer;
+        buffer.Clear();
+        rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
+        writer.SetIndent(' ', 2);
+        doc.Accept(writer);
+        result = buffer.GetString();
+#endif
         std::cout << "[result_begin]" << result << "[result_end]" << std::endl;
     } catch (std::exception& e) {
 	    std::cerr << "Something went wrong with the execution: " << e.what() << std::endl;

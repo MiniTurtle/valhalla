@@ -61,7 +61,7 @@ void loki_worker_t::init_all_to_all(Api& request) {
     auto& options = *request.mutable_options();
     parse_locations(options.mutable_locations(), request, valhalla_exception_t{112});
     if (options.locations_size() < 2) {
-	throw valhalla_exception_t{120};
+		throw valhalla_exception_t{120};
     };
 
     // need costing
@@ -80,48 +80,56 @@ void loki_worker_t::all_to_all(Api& request) {
 		throw valhalla_exception_t{140, Options_Action_Enum_Name(options.action())};
     }
 
-	auto connectivity_level = TileHierarchy::levels().back();
-    uint32_t connectivity_radius = 0;
+	auto locations = PathLocation::fromPBF(options.locations(), true);
+	const auto projections = loki::Search(locations, *reader, costing);
+	for (size_t i = 0; i < locations.size(); ++i) {
+		const auto& correlated = projections.at(locations[i]);
+		PathLocation::toPBF(correlated, options.mutable_locations(i), *reader);
+	}
 
-    // correlate the various locations to the underlying graph
-    std::unordered_map<size_t, size_t> color_counts;
-    try {
-		auto locations = PathLocation::fromPBF(options.locations(), true);
-		const auto projections = loki::Search(locations, *reader, costing);
-		for (size_t i = 0; i < locations.size(); ++i) {
-			const auto& correlated = projections.at(locations[i]);
-			PathLocation::toPBF(correlated, options.mutable_locations(i), *reader);
+	//auto connectivity_level = TileHierarchy::levels().back();
+ //   uint32_t connectivity_radius = 0;
 
-			if (!connectivity_map) {
-				continue;
-			}
+ //   // correlate the various locations to the underlying graph
+ //   std::unordered_map<size_t, size_t> color_counts;
+ //   try {
+	//	auto locations = PathLocation::fromPBF(options.locations(), true);
+	//	const auto projections = loki::Search(locations, *reader, costing);
+	//	for (size_t i = 0; i < locations.size(); ++i) {
+	//		//std::cout << "[loading_begin]" << (i+1) << "/" << locations.size() << "[loading_end]" << std::endl;
+	//		const auto& correlated = projections.at(locations[i]);
+	//		PathLocation::toPBF(correlated, options.mutable_locations(i), *reader);
 
-			auto colors = connectivity_map->get_colors(connectivity_level, correlated, connectivity_radius);
-			for (auto color : colors) {
-				auto itr = color_counts.find(color);
-				if (itr == color_counts.cend()) {
-					color_counts[color] = 1;
-				} else {
-					++itr->second;
-				}
-			}
-		}
-    } catch (const std::exception&) { throw valhalla_exception_t{171}; }
+	//		if (!connectivity_map) {
+	//			continue;
+	//		}
 
-    // are all the locations in the same color regions
-    if (!connectivity_map) {
-		return;
-    }
-    bool connected = false;
-    for (const auto& c : color_counts) {
-		if ((int)c.second == options.locations_size()) {
-			connected = true;
-			break;
-		}
-    }
-    if (!connected) {
-		throw valhalla_exception_t{170};
-    };
+	//		auto colors = connectivity_map->get_colors(connectivity_level, correlated, connectivity_radius);
+	//		for (auto color : colors) {
+	//			auto itr = color_counts.find(color);
+	//			if (itr == color_counts.cend()) {
+	//				color_counts[color] = 1;
+	//			} else {
+	//				++itr->second;
+	//			}
+	//		}
+	//	}
+ //   } catch (const std::exception&) { throw valhalla_exception_t{171}; }
+
+ //   // are all the locations in the same color regions
+ //   if (!connectivity_map) {
+	//	return;
+ //   }
+ //   bool connected = false;
+ //   for (const auto& c : color_counts) {
+	//	if ((int)c.second == options.locations_size()) {
+	//		connected = true;
+	//		break;
+	//	}
+ //   }
+ //   if (!connected) {
+	//	throw valhalla_exception_t{170};
+ //   };
 }
 } // namespace loki
 } // namespace valhalla

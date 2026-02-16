@@ -908,7 +908,8 @@ struct graph_parser {
     tag_handlers_["average_speed"] = [this]() {
       try {
         average_speed_ = std::stof(tag_.second);
-        has_average_speed_ = true;
+        if (average_speed_ > 1)
+            has_average_speed_ = true;
         way_.set_tagged_speed(true);
       } catch (const std::out_of_range& oor) {
         LOG_INFO("out_of_range thrown for way id: " + std::to_string(osmid_));
@@ -917,7 +918,8 @@ struct graph_parser {
     tag_handlers_["advisory_speed"] = [this]() {
       try {
         advisory_speed_ = std::stof(tag_.second);
-        has_advisory_speed_ = true;
+        if (advisory_speed_ > 1)
+            has_advisory_speed_ = true;
         way_.set_tagged_speed(true);
       } catch (const std::out_of_range& oor) {
         LOG_INFO("out_of_range thrown for way id: " + std::to_string(osmid_));
@@ -3057,7 +3059,12 @@ struct graph_parser {
       way_.set_road_class(highway_cutoff_rc_);
     }
 
-    if (use_road_class_speed_fallback_ && (!has_max_speed_ || max_speed_ == 0)) {
+    if (way_.ferry() && (!has_max_speed_ || max_speed_ <= 5)) {
+        max_speed_ = kDefaultSpeedLimit_Ferry;
+        has_max_speed_ = true;
+    }
+
+    if (use_road_class_speed_fallback_ && (!has_max_speed_ || max_speed_ <= 5)) {
         switch (way_.road_class()) {
           case RoadClass::kMotorway:
                max_speed_ = kRoadClassDefaultSpeedLimit_Motorway;
@@ -3094,7 +3101,13 @@ struct graph_parser {
 	      default:
                break;
         }
-    }
+    } 
+
+    if (!has_default_speed_ || default_speed_ <= 1)
+        if (has_max_speed_) {
+            has_default_speed_ = true;
+            default_speed_ = max_speed_;
+        }
 
     // set the speed
     if (has_average_speed_) {

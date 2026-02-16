@@ -30,7 +30,7 @@ constexpr uint32_t kPermanent = 1;
 // be "adjacent" to an node that is permanently labeled.
 constexpr uint32_t kTemporary = 2;
 
-constexpr uint32_t kFerryUpClass = static_cast<uint32_t>(baldr::RoadClass::kPrimary);
+constexpr uint32_t kFerryUpClass = static_cast<uint32_t>(baldr::RoadClass::kTertiary);
 
 // NodeLabel - for simple shortest path
 struct NodeLabel {

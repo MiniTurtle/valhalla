@@ -135,17 +135,18 @@ constexpr uint32_t kRoadClassDefaultSpeedLimit_Tertiary = 60;
 constexpr uint32_t kRoadClassDefaultSpeedLimit_Unclassified = 40;
 constexpr uint32_t kRoadClassDefaultSpeedLimit_Residential = 50;
 constexpr uint32_t kRoadClassDefaultSpeedLimit_ServiceOther = 20;
+constexpr uint32_t kDefaultSpeedLimit_Ferry = 30;
 
 // Road class or importance of an edge
 enum class RoadClass : uint8_t {
-  kMotorway = 0,
-  kTrunk = 1,
-  kPrimary = 2,
-  kSecondary = 3,
-  kTertiary = 4,
-  kUnclassified = 5,
-  kResidential = 6,
-  kServiceOther = 7,
+  kMotorway = 0, // identifies the highest-performance roads within a territory. It should be used only on roads with control of access, or selected roads with limited access depending on the local context and prevailing convention. 
+  kTrunk = 1, // for high-performance or high-importance roads that don't meet the requirements for motorway, but are not classified as primary either
+  kPrimary = 2, // major highway linking large towns, but which does not satisfy the performance requirements of a motorway
+  kSecondary = 3, // highways which are not part of major routes
+  kTertiary = 4, // used for roads connecting smaller settlements, and within large settlements for roads connecting local centres.
+  kUnclassified = 5, // minor public roads, typically at the lowest level of administrative hierarchy in that jurisdiction.
+  kResidential = 6, // on roads within residential areas, or providing access to them. While these roads typically allow through traffic, they are not normally used as through routes
+  kServiceOther = 7, // denotes ways used for vehicle access to a building, parking lot, service station, business estate, beach, campsite, etc.
   kInvalid = 8, // only 3 bits in DE for road class
 };
 inline RoadClass stringToRoadClass(const std::string& s) {

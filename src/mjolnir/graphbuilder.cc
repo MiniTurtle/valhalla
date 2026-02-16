@@ -903,10 +903,16 @@ void BuildTileSet(const std::string& ways_file,
           }
 
           // ferry speed override.  duration is set on the way
-          if (w.ferry() && w.duration()) {
-            // convert to kph
-            uint32_t spd = static_cast<uint32_t>((std::get<0>(found->second) * 3.6) / w.duration());
-            speed = (spd == 0) ? 1 : spd;
+          //if (w.ferry() && w.duration()) {
+          //  // convert to kph
+          //  uint32_t spd = static_cast<uint32_t>((std::get<0>(found->second) * 3.6) / w.duration());
+          //  speed = (spd <= 5) ? speed_limit : spd;
+          //} else if (w.ferry()) {
+          //  speed = (speed <= 5) ? speed_limit : speed;
+          //}
+
+          if (w.ferry()) {
+            speed = (speed <= 5) ? speed_limit : speed;
           }
 
           // Add a directed edge and get a reference to it
