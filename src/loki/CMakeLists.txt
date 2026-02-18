@@ -16,6 +16,7 @@ set(sources_with_warnings
   isochrone_action.cc
   height_action.cc
   locate_action.cc
+  query_action.cc
   node_search.cc
   route_action.cc
   search.cc

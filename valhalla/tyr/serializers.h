@@ -77,6 +77,11 @@ serializeLocate(const Api& request,
                 baldr::GraphReader& reader);
 
 /**
+ * /query: return edge info for an array of directed edge GraphIds, serialized like /locate.
+ */
+std::string serializeQuery(const Api& request, baldr::GraphReader& reader);
+
+/**
  * Turn a list of locations into a list of locations with a bool that says whether transit tiles are
  * near by
  *

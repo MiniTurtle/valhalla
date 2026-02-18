@@ -74,6 +74,14 @@ public:
                      Api* api = nullptr);
 
   /**
+   * Perform the query action. Accepts an array of directed edge GraphIds in the request ("edge_id")
+   * and returns edge information using the same JSON schema as /locate.
+   */
+  std::string query(const std::string& request_str,
+                    const std::function<void()>* interrupt = nullptr,
+                    Api* api = nullptr);
+
+  /**
    * Perform the matrix action and return json or protobuf depending on which was requested. The
    * request may either be in the form of a json string provided by the request_str parameter or
    * contained in the api parameter as a deserialized protobuf object

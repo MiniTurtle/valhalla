@@ -34,6 +34,7 @@ public:
   virtual void cleanup() override;
 
   std::string locate(Api& request);
+  std::string query(Api& request);
   void route(Api& request);
   void matrix(Api& request);
   void all_to_all(Api& request);

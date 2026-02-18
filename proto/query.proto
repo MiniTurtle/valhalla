@@ -1,0 +1,13 @@
+syntax = "proto3";
+option optimize_for = LITE_RUNTIME;
+package valhalla;
+
+// /query: fetch information for a list of directed edge GraphIds.
+//
+// Note: today /query is serialized to JSON using the same schema as /locate.
+// This proto is reserved for potential future PBF responses.
+message Query {
+  // Directed edge GraphIds (GraphId::value)
+  repeated uint64 query_edge_id = 1 [packed=true];
+  bool verbose = 2;
+}

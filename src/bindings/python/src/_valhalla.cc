@@ -52,6 +52,9 @@ PYBIND11_MODULE(_valhalla, m) {
           "locate", [](vt::actor_t& self, std::string& req) { return self.locate(req); },
           "Provides information about nodes and edges.")
       .def(
+          "query", [](vt::actor_t& self, std::string& req) { return self.query(req); },
+          "Provides information about edges by edge_id (like locate, without lat/lon lookup).")
+      .def(
           "optimized_route",
           [](vt::actor_t& self, std::string& req) { return self.optimized_route(req); },
           "Optimizes the order of a set of waypoints by time.")

@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
           ("f,json-file", "File containing the JSON query", cxxopts::value<std::string>())
           ("c,config", "Valhalla configuration file", cxxopts::value<std::string>())
           ("i,inline-config", "Inline JSON config", cxxopts::value<std::string>())
-          ("a,action", "Action type: route, locate, sources_to_targets, all_to_all, optimized_route, isochrone, trace_route, trace_attributes, height, transit_available, expansion, centroid & status", cxxopts::value<std::string>());
+          ("a,action", "Action type: route, locate, query, sources_to_targets, all_to_all, optimized_route, isochrone, trace_route, trace_attributes, height, transit_available, expansion, centroid & status", cxxopts::value<std::string>());
 	    // clang-format on
 
 	    auto result = options.parse(argc, argv);
@@ -90,6 +90,7 @@ int main(int argc, char* argv[]) {
         static const std::unordered_map<std::string, Options::Action> str_to_option {
 	        { "route", Options::route },
 	        { "locate", Options::locate },
+            { "query", Options::query },
 	        { "sources_to_targets", Options::sources_to_targets },
 	        { "all_to_all", Options::all_to_all },
 	        { "optimized_route", Options::optimized_route },

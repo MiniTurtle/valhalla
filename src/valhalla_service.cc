@@ -117,6 +117,9 @@ int main(int argc, char** argv) {
         case valhalla::Options::locate:
           std::cout << actor.locate(request_str, nullptr, &request) << std::endl;
           break;
+        case valhalla::Options::query:
+          std::cout << actor.query(request_str, nullptr, &request) << std::endl;
+          break;
         case valhalla::Options::sources_to_targets:
           std::cout << actor.matrix(request_str, nullptr, &request) << std::endl;
           break;

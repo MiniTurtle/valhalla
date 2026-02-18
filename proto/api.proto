@@ -11,6 +11,7 @@ import public "matrix.proto";     // the matrix results
 import public "all_to_all.proto"; // the all_to_all results
 import public "isochrone.proto";  // the isochrone results
 import public "expansion.proto";  // the expansion results
+import public "query.proto";      // edge query results
 
 message Api {
   // this is the request to the api
@@ -23,6 +24,7 @@ message Api {
   Matrix matrix = 5;          // sources_to_targets
   Isochrone isochrone = 6;    // isochrone
   Expansion expansion = 7;    // expansion
+  Query query = 8;            // query
   //TODO: locate;
   //TODO: height;
 

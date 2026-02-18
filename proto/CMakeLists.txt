@@ -5,6 +5,7 @@ set(protobuf_descriptors
   directions.proto
   info.proto
   options.proto
+  query.proto
   sign.proto
   trip.proto
   transit.proto

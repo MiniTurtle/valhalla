@@ -389,6 +389,9 @@ loki_worker_t::work(const std::list<zmq::message_t>& job,
       case Options::locate:
         result = to_response(locate(request), info, request);
         break;
+      case Options::query:
+        result = to_response(query(request), info, request);
+        break;
       case Options::sources_to_targets:
       case Options::optimized_route:
         matrix(request);

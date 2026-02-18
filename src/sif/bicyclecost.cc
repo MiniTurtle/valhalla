@@ -469,6 +469,9 @@ BicycleCost::BicycleCost(const Costing& costing)
   }
 
   speed_ = costing_options.cycling_speed();
+  if (speed_ <= 1) {
+    speed_ = kDefaultCyclingSpeed[(int32_t)type_];
+  }
   avoid_bad_surfaces_ = costing_options.avoid_bad_surfaces();
   minimal_surface_penalized_ = kWorstAllowedSurface[static_cast<uint32_t>(type_)];
   worst_allowed_surface_ = avoid_bad_surfaces_ == 1.0f ? minimal_surface_penalized_ : Surface::kPath;

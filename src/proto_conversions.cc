@@ -114,6 +114,7 @@ bool Options_Action_Enum_Parse(const std::string& action, Options::Action* a) {
   static const std::unordered_map<std::string, Options::Action> actions{
       {"route", Options::route},
       {"locate", Options::locate},
+      {"query", Options::query},
       {"sources_to_targets", Options::sources_to_targets},
       {"all_to_all", Options::all_to_all},
       {"optimized_route", Options::optimized_route},
@@ -149,6 +150,7 @@ const std::string& Options_Action_Enum_Name(const Options::Action action) {
   static const std::unordered_map<int, std::string> actions{
       {Options::route, "route"},
       {Options::locate, "locate"},
+      {Options::query, "query"},
       {Options::sources_to_targets, "sources_to_targets"},
       {Options::optimized_route, "optimized_route"},
       {Options::isochrone, "isochrone"},

@@ -58,6 +58,7 @@ const std::unordered_map<unsigned, valhalla::valhalla_exception_t> error_codes{
     {113, {113, "Insufficiently specified required parameter 'contours'", 400, HTTP_400, OSRM_INVALID_OPTIONS, "contours_parse_failed"}},
     {114, {114, "Insufficiently specified required parameter 'shape' or 'encoded_polyline'", 400, HTTP_400, OSRM_INVALID_OPTIONS, "shape_parse_failed"}},
     {115, {115, "Insufficiently specified required parameter 'action'", 400, HTTP_400, OSRM_INVALID_OPTIONS, "action_parse_failed"}},
+    {116, {116, "Insufficiently specified required parameter 'edge_id'", 400, HTTP_400, OSRM_INVALID_OPTIONS, "edge_id_parse_failed"}},
     {120, {120, "Insufficient number of locations provided", 400, HTTP_400, OSRM_INVALID_OPTIONS, "not_enough_locations"}},
     {121, {121, "Insufficient number of sources provided", 400, HTTP_400, OSRM_INVALID_OPTIONS, "not_enough_sources"}},
     {122, {122, "Insufficient number of targets provided", 400, HTTP_400, OSRM_INVALID_OPTIONS, "not_enough_targets"}},
@@ -178,7 +179,8 @@ bool is_format_supported(Options::Action action, Options::Format format) {
       (1 << Options::route) | (1 << Options::optimized_route) | (1 << Options::trace_route),
       // osrm
       (1 << Options::route) | (1 << Options::optimized_route) | (1 << Options::trace_route) |
-          (1 << Options::trace_attributes) | (1 << Options::locate) | (1 << Options::status) |
+          (1 << Options::trace_attributes) | (1 << Options::locate) | (1 << Options::query) |
+          (1 << Options::status) |
           (1 << Options::sources_to_targets) | (1 << Options::expansion),
       // pbf
       (1 << Options::route) | (1 << Options::optimized_route) | (1 << Options::trace_route) |
@@ -1061,6 +1063,34 @@ void from_json(rapidjson::Document& doc, Options::Action action, Api& api) {
 
   // get the targets in there
   parse_locations(doc, api, "targets", 132, ignore_closures, had_date_time);
+
+  // /query: accept an array (or single) of directed edge GraphId values
+  if (action == Options::query) {
+    if (!pbf) {
+      options.mutable_query_edge_id()->Clear();
+    }
+
+    auto edge_ids_json = rapidjson::get_child_optional(doc, "/edge_id");
+    if (edge_ids_json) {
+      options.mutable_query_edge_id()->Clear();
+      if (edge_ids_json->IsArray()) {
+        for (const auto& v : edge_ids_json->GetArray()) {
+          if (!v.IsUint64()) {
+            throw valhalla_exception_t{116};
+          }
+          options.add_query_edge_id(v.GetUint64());
+        }
+      } else if (edge_ids_json->IsUint64()) {
+        options.add_query_edge_id(edge_ids_json->GetUint64());
+      } else {
+        throw valhalla_exception_t{116};
+      }
+    }
+
+    if (options.query_edge_id_size() < 1) {
+      throw valhalla_exception_t{116};
+    }
+  }
 
   // if not a time dependent route/mapmatch disable time dependent edge speed/flow data sources
   if (options.date_time_type() == Options::no_time && !had_date_time &&

@@ -390,6 +390,7 @@ message Options {
     centroid = 11;
     status = 12;
     all_to_all = 13;
+    query = 14;
   }
 
   enum DateTimeType {
@@ -528,4 +529,7 @@ message Options {
                                                                    // ensuring that each edge appears in the output only once. [default = false]
   bool admin_crossings = 59;                                       // Include administrative boundary crossings
   bool turn_lanes = 60;                                            // Include turn lane information into Valhalla serializer response.
+
+  // /query: list of directed edge GraphIds (GraphId::value) to fetch information for
+  repeated uint64 query_edge_id = 61 [packed=true];
 }

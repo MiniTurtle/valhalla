@@ -59,6 +59,8 @@ std::string actor_t::act(Api& api, const std::function<void()>* interrupt, std::
       return route(request_str, interrupt, &api);
     case Options::locate:
       return locate(request_str, interrupt, &api);
+    case Options::query:
+      return query(request_str, interrupt, &api);
     case Options::sources_to_targets:
       return matrix(request_str, interrupt, &api);
     case Options::all_to_all:
@@ -128,6 +130,25 @@ actor_t::locate(const std::string& request_str, const std::function<void()>* int
   // check the request and locate the locations in the graph
   auto json = pimpl->loki_worker.locate(*api);
   return json;
+}
+
+std::string
+actor_t::query(const std::string& request_str, const std::function<void()>* interrupt, Api* api) {
+  auto scoped_cleaner = make_finally([this]() {
+    if (auto_cleanup)
+      cleanup();
+  });
+  // set the interrupts
+  pimpl->set_interrupts(interrupt);
+  // if the caller doesn't want a copy we'll use this dummy
+  Api dummy;
+  if (!api) {
+    api = &dummy;
+  }
+  // parse the request
+  ParseApi(request_str, Options::query, *api);
+  // fetch edge information and serialize like /locate
+  return pimpl->loki_worker.query(*api);
 }
 
 std::string

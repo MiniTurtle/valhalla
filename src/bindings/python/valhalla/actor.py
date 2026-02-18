@@ -84,6 +84,10 @@ class Actor(_Actor):
         return super().locate(req)
 
     @dict_or_str
+    def query(self, req: Union[str, dict]) -> Union[str, dict]:
+        return super().query(req)
+
+    @dict_or_str
     def isochrone(self, req: Union[str, dict]) -> Union[str, dict]:
         return super().isochrone(req)
 

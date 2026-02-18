@@ -14,6 +14,7 @@ set(sources
 
 set(sources_with_warnings
   locate_serializer.cc
+  query_serializer.cc
   route_serializer.cc
   route_serializer_valhalla.cc
   trace_serializer.cc)
