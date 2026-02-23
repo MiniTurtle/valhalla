@@ -121,26 +121,52 @@ int main(int argc, char* argv[]) {
     }
 
     try {
+        config.put<bool>("service_limits.status.allow_verbose", true);
         valhalla::tyr::actor_t actor(config);
 
         valhalla::Api request;
-        auto& options = *request.mutable_options();
-        options.set_action(action);
-        //valhalla::ParseApi(json_str, action, request);
+        request.mutable_options()->set_action(action);
+        std::string request_result = actor.act(request, nullptr, json_str);
 
-        std::string result = actor.act(request, nullptr, json_str);
-#ifdef _DEBUG
-        //
-        // If in debug mode, print pretty json
         rapidjson::Document doc;
-        doc.Parse(result);
+        doc.Parse(request_result);
+
+        if (action != Options::status) {
+            valhalla::Api status_request;
+            status_request.mutable_options()->set_action(Options::status);
+            status_request.mutable_options()->set_verbose(true);
+            std::string status_result = actor.act(status_request, nullptr, "");
+
+            rapidjson::Document doc_status;
+            doc_status.Parse(status_result);
+            doc.AddMember("valhalla_version", doc_status["version"], doc.GetAllocator());
+
+            std::time_t time = doc_status["tileset_last_modified"].GetInt64();
+            char timeString[std::size("yyyy-mm-ddThh:mm:ssZ")];
+            std::strftime(std::data(timeString), std::size(timeString),
+                          "%FT%TZ", std::gmtime(&time));
+
+            doc.AddMember("tileset_last_modified_str", std::string(timeString), doc.GetAllocator());
+            doc.AddMember("tileset_last_modified", doc_status["tileset_last_modified"], doc.GetAllocator());
+            doc.AddMember("osm_changeset", doc_status["osm_changeset"], doc.GetAllocator());
+        }
+
+        std::string result = "";
         rapidjson::StringBuffer buffer;
         buffer.Clear();
+#ifdef _DEBUG
+        //
+        // If in debug mode, print pretty json 
         rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer);
         writer.SetIndent(' ', 2);
         doc.Accept(writer);
         result = buffer.GetString();
+#else
+        rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+        doc.Accept(writer);
+        result = buffer.GetString();
 #endif
+
         std::cout << "[result_begin]" << result << "[result_end]" << std::endl;
     } catch (std::exception& e) {
 	    std::cerr << "Something went wrong with the execution: " << e.what() << std::endl;
