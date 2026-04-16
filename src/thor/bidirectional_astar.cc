@@ -276,6 +276,7 @@ inline bool BidirectionalAStar::ExpandInner(baldr::GraphReader& graphreader,
                                                 opp_pred_edge, t2, pred.edgeid(), reader_getter,
                                                 static_cast<bool>(flow_sources & kDefaultFlowMask),
                                                 pred.internal_turn());
+
   newcost += transition_cost;
 
   // Check if edge is temporarily labeled and this path has less cost. If

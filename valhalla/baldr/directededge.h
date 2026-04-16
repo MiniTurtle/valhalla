@@ -662,6 +662,20 @@ public:
   void set_reverseaccess(const uint32_t modes);
 
   /**
+   * Gets the duration.
+   * @return  Returns the duration in sec.
+   */
+  uint32_t duration() const {
+    return duration_;
+  }
+
+   /**
+   * Sets the duration in sec.
+   * @param  speed  Speed in sec.
+   */
+  void set_duration(const uint32_t sec);
+  
+  /**
    * Gets the average speed in KPH.
    * @return  Returns the speed in KPH.
    */
@@ -1305,6 +1319,8 @@ protected:
   uint32_t speed_type_ : 1;    // Speed type (used in setting default speeds)
   uint32_t named_ : 1;         // 1 if this edge has names, 0 if unnamed
   uint32_t link_ : 1;          // *link tag - Ramp or turn channel. Used in costing.
+
+  uint32_t duration_; // Duration (sec)
 };
 
 /**

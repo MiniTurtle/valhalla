@@ -347,6 +347,14 @@ void DirectedEdge::set_reverseaccess(const uint32_t modes) {
 // -------------------------------- speed -------------------------- //
 
 // Sets the average speed in KPH.
+void DirectedEdge::set_duration(const uint32_t sec) {
+  //if (sec <= 0) {
+  //  LOG_WARN("Duration is lower than 0");
+  //}
+  duration_ = sec;
+}
+
+// Sets the average speed in KPH.
 void DirectedEdge::set_speed(const uint32_t speed) {
   if (speed > kMaxAssumedSpeed) {
     LOG_WARN("Exceeding maximum.  Average speed: " + std::to_string(speed));
@@ -599,6 +607,8 @@ void DirectedEdge::json(rapidjson::writer_wrapper_t& writer) const {
   writer.start_object("end_node");
   endnode().json(writer);
   writer.end_object();
+
+  writer("duration", static_cast<uint64_t>(duration_));
 
   writer.start_object("speeds");
   writer("default", static_cast<uint64_t>(speed_));

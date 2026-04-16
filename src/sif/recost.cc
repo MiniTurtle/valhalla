@@ -122,8 +122,9 @@ void recost_forward(baldr::GraphReader& reader,
     Cost transition_cost =
         node ? costing.TransitionCost(edge, node, label, tile, reader_getter) : Cost{};
     // update the cost to the end of this edge
-    uint8_t flow_sources;
+    uint8_t flow_sources = 0;
     cost += transition_cost + costing.EdgeCost(edge, tile, offset_time, flow_sources) * edge_pct;
+
     // update the length to the end of this edge
     length += edge->length() * edge_pct;
     // construct the label

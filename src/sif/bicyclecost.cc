@@ -622,6 +622,9 @@ Cost BicycleCost::EdgeCost(const baldr::DirectedEdge* edge,
 
   // Ferries are a special case - they use the ferry speed (stored on the edge)
   if (edge->use() == Use::kFerry) {
+    if (edge->duration() > 0)
+        return {shortest_ ? edge->length() : edge->duration() * ferry_factor_, (float)edge->duration()};
+
     // Compute elapsed time based on speed. Modulate cost with weighting factors.
     assert(edge->speed() < kSpeedFactor.size());
     float sec = (edge->length() * kSpeedFactor[edge->speed()]);

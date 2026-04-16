@@ -491,6 +491,11 @@ Cost AutoCost::EdgeCost(const baldr::DirectedEdge* edge,
 
   float sec = edge->length() * kSpeedFactor[final_speed];
 
+  if (edge->use() == Use::kFerry) {
+    if (edge->duration() > 0)
+        sec = (float)edge->duration();
+  }
+
   if (shortest_) {
     return Cost(edge->length(), sec);
   }

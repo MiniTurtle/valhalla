@@ -911,7 +911,7 @@ void BuildTileSet(const std::string& ways_file,
                 speed = static_cast<uint32_t>((std::get<0>(found->second) * 3.6) / w.duration());
               }
 
-              const uint32_t MIN_ALLOWED_SPEED = 5;
+              const uint32_t MIN_ALLOWED_SPEED = 1;
               if (speed <= MIN_ALLOWED_SPEED) {
                 speed = std::max(speed, speed_limit);
                 speed = std::max(speed, MIN_ALLOWED_SPEED);
@@ -928,6 +928,9 @@ void BuildTileSet(const std::string& ways_file,
                                  static_cast<RoadClass>(edge.attributes.importance_hierarchy));
 
           DirectedEdge& directededge = graphtile.directededges().emplace_back(de);
+
+          directededge.set_duration(w.duration());
+
           // temporarily set the leaves tile flag to indicate when we need to search the access.bin
           // file. ferries don't have overrides in country access logic, so use this bit to indicate
           // if the speed has been set via the duration and length
