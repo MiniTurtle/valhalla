@@ -718,6 +718,8 @@ Cost PedestrianCost::EdgeCost(const baldr::DirectedEdge* edge,
   if (edge->use() == Use::kFerry) {
     auto speed = tile->GetSpeed(edge, flow_mask_, time_info.second_of_week, false, &flow_sources);
     float sec = edge->length() * (kSecPerHour * 0.001f) / static_cast<float>(speed);
+    if (edge->duration() > 0)
+        sec = (float)edge->duration();
     return {sec * ferry_factor_, sec};
   }
 
