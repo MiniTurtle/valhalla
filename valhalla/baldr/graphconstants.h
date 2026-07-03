@@ -126,17 +126,6 @@ constexpr uint32_t kParkingAisleSpeed = 15; // 15 KPH (10MPH)
 constexpr uint32_t kDriveThruSpeed = 10;    // 10 KPH
 constexpr uint32_t kDrivewaySpeed = 10;     // 10 KPH
 
-
-constexpr uint32_t kRoadClassDefaultSpeedLimit_Motorway = 100;
-constexpr uint32_t kRoadClassDefaultSpeedLimit_Trunk = 80;
-constexpr uint32_t kRoadClassDefaultSpeedLimit_Primary = 80;
-constexpr uint32_t kRoadClassDefaultSpeedLimit_Secondary = 80;
-constexpr uint32_t kRoadClassDefaultSpeedLimit_Tertiary = 60;
-constexpr uint32_t kRoadClassDefaultSpeedLimit_Unclassified = 40;
-constexpr uint32_t kRoadClassDefaultSpeedLimit_Residential = 50;
-constexpr uint32_t kRoadClassDefaultSpeedLimit_ServiceOther = 20;
-constexpr uint32_t kDefaultSpeedLimit_Ferry = 30;
-
 // Road class or importance of an edge
 enum class RoadClass : uint8_t {
   kMotorway = 0, // identifies the highest-performance roads within a territory. It should be used only on roads with control of access, or selected roads with limited access depending on the local context and prevailing convention. 

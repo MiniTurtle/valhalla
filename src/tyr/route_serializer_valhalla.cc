@@ -256,6 +256,8 @@ void turn_lanes(const TripLeg& leg,
 
 void legs(valhalla::Api& api, int route_index, rapidjson::writer_wrapper_t& writer) {
   writer.start_array("legs");
+  bool verbose = api.options().verbose();
+
   const auto& directions_legs = api.directions().routes(route_index).legs();
   unsigned int length_prec = api.options().units() == Options::miles ? 4 : 3;
   auto trip_leg_itr = api.mutable_trip()->mutable_routes(route_index)->mutable_legs()->begin();
@@ -328,6 +330,43 @@ void legs(valhalla::Api& api, int route_index, rapidjson::writer_wrapper_t& writ
       // Time, length, cost, and shape indexes
       const auto& end_node = trip_leg_itr->node(maneuver.end_path_index());
       const auto& begin_node = trip_leg_itr->node(maneuver.begin_path_index());
+
+      if (verbose) {
+        writer.start_object("verbose");
+	    {
+            /*writer("leg_id", directions_leg.leg_id());
+            writer("leg_count", directions_leg.leg_count());*/
+
+            auto write_node = [&writer](const TripLeg::Node& node) {
+                writer("edge_id", node.edge().id());
+                writer("way_id", node.edge().way_id());
+                std::string road_class = "";
+                switch(node.edge().road_class()) {
+		            case valhalla::RoadClass::kMotorway : road_class = "Motorway";break;
+		            case valhalla::RoadClass::kTrunk : road_class ="Trunk";break;
+		            case valhalla::RoadClass::kPrimary : road_class ="Primary";break;
+		            case valhalla::RoadClass::kSecondary : road_class ="Secondary";break;
+		            case valhalla::RoadClass::kTertiary : road_class ="Tertiary";break;
+		            case valhalla::RoadClass::kUnclassified : road_class ="Unclassified";break;
+		            case valhalla::RoadClass::kResidential : road_class ="Residential";break;
+		            case valhalla::RoadClass::kServiceOther : road_class ="ServiceOther";break;
+		            default: road_class ="unknown";break;
+                }
+                writer("road_class", road_class);
+                writer("speed", node.edge().speed());
+                writer("speed_limit", node.edge().speed_limit());
+            };
+
+            writer.start_object("begin_node");
+            write_node(begin_node);
+            writer.end_object(); 
+            writer.start_object("end_node");
+            write_node(end_node);
+            writer.end_object();
+        }
+        writer.end_object();
+      }
+
       auto cost = end_node.cost().elapsed_cost().cost() - begin_node.cost().elapsed_cost().cost();
 
       writer.set_precision(tyr::kDefaultPrecision);
@@ -335,6 +374,7 @@ void legs(valhalla::Api& api, int route_index, rapidjson::writer_wrapper_t& writ
       writer.set_precision(length_prec);
       writer("length", maneuver.length());
       writer.set_precision(tyr::kDefaultPrecision);
+      //writer("way_id", maneuver.);
       writer("speed_limit", maneuver.speed_limit());
       writer("speed", maneuver.speed());
       writer("cost", cost);

@@ -362,9 +362,18 @@ void ManeuversBuilder::Combine(std::list<Maneuver>& maneuvers) {
       bool is_first_man = (curr_man == maneuvers.begin());
 
       LOG_TRACE("+++ Combine TOP ++++++++++++++++++++++++++++++++++++++++++++");
+      // Do not combine
+      // if has node_type
+      if (curr_man->speed(Options::Units::Options_Units_kilometers) != next_man->speed(Options::Units::Options_Units_kilometers)) {
+        LOG_TRACE("+++ Do Not Combine: if has different speeds +++");
+        // Update with no combine
+        prev_man = curr_man;
+        curr_man = next_man;
+        ++next_man;
+      }
       // Collapse the TransitConnectionStart Maneuver
       // if the transit connection stop is a simple stop (not a station)
-      if ((curr_man->type() == DirectionsLeg_Maneuver_Type_kTransitConnectionStart) &&
+      else if ((curr_man->type() == DirectionsLeg_Maneuver_Type_kTransitConnectionStart) &&
           next_man->IsTransit() &&
           curr_man->transit_connection_platform_info().type() == TransitPlatformInfo_Type_kStop) {
         LOG_TRACE("+++ Combine: Collapse the TransitConnectionStart Maneuver +++");
@@ -2157,6 +2166,9 @@ bool ManeuversBuilder::CanManeuverIncludePrevEdge(Maneuver& maneuver, int node_i
   auto curr_edge = trip_path_->GetCurrEdge(node_index);
   auto node = trip_path_->GetEnhancedNode(node_index);
   auto turn_degree = GetTurnDegree(prev_edge->end_heading(), curr_edge->begin_heading());
+
+  if (prev_edge->speed() != curr_edge->speed())
+      return false;
 
   if (curr_edge->pedestrian_type() == PedestrianType::kBlind && maneuver.has_node_type()) {
     return false;

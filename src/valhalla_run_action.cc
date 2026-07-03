@@ -137,6 +137,14 @@ int main(int argc, char* argv[]) {
             status_request.mutable_options()->set_verbose(true);
             std::string status_result = actor.act(status_request, nullptr, "");
 
+            if (!doc.IsObject()) {
+                rapidjson::Value existingValue;
+                existingValue = doc.Move();
+                doc.SetObject();
+                rapidjson::Document::AllocatorType& allocator = doc.GetAllocator();
+                doc.AddMember("result", existingValue, allocator);
+            }
+
             rapidjson::Document doc_status;
             doc_status.Parse(status_result);
             doc.AddMember("valhalla_version", doc_status["version"], doc.GetAllocator());

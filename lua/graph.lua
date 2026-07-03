@@ -67,16 +67,6 @@ restriction = {
 
 --the default speed for tracks is lowered after
 --the call to default_speed
--- default_speed = {
--- [0] = 105,
--- [1] = 90,
--- [2] = 75,
--- [3] = 60,
--- [4] = 50,
--- [5] = 40,
--- [6] = 35,
--- [7] = 25
--- }
 -- [0] kMotorway
 -- [1] kTrunk
 -- [2] kPrimary
@@ -745,24 +735,55 @@ function numeric_prefix(num_str, allow_decimals)
   return num_str:sub(0, index)
 end
 
---normalize a speed value
+-- Define the country and zone lookup maps once (outside the function/loop)
+local country_zones = {
+    FI = { urban = 50.0, rural = 80.0,  motorway = 120.0 },
+    RU = { urban = 60.0, rural = 90.0,  motorway = 110.0 },
+    SE = { urban = 50.0, rural = 70.0,  motorway = 110.0 }
+}
+
+-- normalize a speed value
 function normalize_speed(speed)
-  --grab the number prefix
-  local num = tonumber(numeric_prefix(speed, false))
+    local num
 
-  --check if the rest of the string ends in "mph" convert to kph
-  if num then
-    if speed:sub(-3) == "mph" then
-      num = round(num * 1.609344)
+    if type(speed) == "string" then		
+        -- Check if it matches the <countrycode>:<zone type> format
+        local country, zone = string.match(speed, "^([^:]+):([^:]+)$")
+
+        if country and zone then
+            local zone_map = country_zones[country]
+            local matched_speed = zone_map and zone_map[zone]
+            
+            if matched_speed then
+                return matched_speed
+            else
+                -- If map lookups fail, log it and fallback to standard normalization
+                print("Unknown country or zone type: " .. speed .. " for way id: " .. tostring(osmid_))
+            end
+        end
+
+        -- Grab the number prefix (safely inside string block)
+        num = tonumber(numeric_prefix(speed, false))
+
+        -- Check if the rest of the string ends in "mph" convert to kph
+        if num and speed:sub(-3) == "mph" then
+            num = round(num * 1.609344)
+        end
+    elseif type(speed) == "number" then
+        -- If it's already a number, just assign it directly
+        num = speed
+    end
+	
+    -- Final boundary validation for all numbers
+    if num then
+        -- if num > 150kph or num < 10kph....toss
+        if num > 150 or num < 10 then
+            return nil
+        end
+        return num
     end
 
-    --if num > 150kph or num < 10kph....toss
-    if num > 150 or num < 10 then
-      return nil
-    end
-  end
-
-  return num
+    return nil
 end
 
 function normalize_weight(weight)
@@ -1492,7 +1513,9 @@ function filter_tags_generic(kv)
     rc = 2 --TODO:  can we weight based on ferry types?
   elseif kv["highway"] == nil and (kv["railway"] or kv["route"] == "shuttle_train") then
     rc = 2 --TODO:  can we weight based on rail types?
-  elseif rc == nil then --service and other = 7
+  end
+  
+  if rc == nil then --service and other = 7
     rc = 7
   end
 
@@ -1504,6 +1527,40 @@ function filter_tags_generic(kv)
 --   if kv["service"] == "driveway" then
 --      kv["default_speed"] = math.floor(tonumber(kv["default_speed"]) * 0.5)
 --   end
+
+  if (ferry == true) then
+	kv["default_speed"] = 30
+  end
+
+  --lower the default speed for tracks
+  if kv["highway"] == "track" then
+	 kv["default_speed"] = 50
+	 if kv["tracktype"] then
+       if kv["tracktype"] == "grade1" then
+         kv["default_speed"] = 50
+       elseif kv["tracktype"] == "grade2" then
+         kv["default_speed"] = 40
+       elseif kv["tracktype"] == "grade3" then
+         kv["default_speed"] = 20
+       elseif kv["tracktype"] == "grade4" then
+         kv["default_speed"] = 10 
+	   elseif kv["tracktype"] == "grade5" then
+         kv["default_speed"] = 5
+       end
+     end
+     -- kv["default_speed"] = 5
+     -- if kv["tracktype"] then
+       -- if kv["tracktype"] == "grade1" then
+         -- kv["default_speed"] = 20
+       -- elseif kv["tracktype"] == "grade2" then
+         -- kv["default_speed"] = 15
+       -- elseif kv["tracktype"] == "grade3" then
+         -- kv["default_speed"] = 12
+       -- elseif kv["tracktype"] == "grade4" then
+         -- kv["default_speed"] = 10
+       -- end
+     -- end
+  end
 
   kv["lit"] = lit[kv["lit"]]
 
@@ -1688,8 +1745,9 @@ function filter_tags_generic(kv)
   kv["alt_name"] = kv["alt_name"]
   kv["official_name"] = kv["official_name"]
 
+
   if kv["maxspeed"] == "none" then
-    --- special case unlimited speed limit (german autobahn)
+    -- special case unlimited speed limit (german autobahn)
     kv["max_speed"] = "unlimited"
   else
     kv["max_speed"] = normalize_speed(kv["maxspeed"])
@@ -1703,22 +1761,6 @@ function filter_tags_generic(kv)
   kv["int_ref"] = kv["int_ref"]
   kv["surface"] = kv["surface"]
   kv["wheelchair"] = wheelchair[kv["wheelchair"]]
-
-  --lower the default speed for tracks
-  if kv["highway"] == "track" then
-     kv["default_speed"] = 5
-     if kv["tracktype"] then
-       if kv["tracktype"] == "grade1" then
-         kv["default_speed"] = 20
-       elseif kv["tracktype"] == "grade2" then
-         kv["default_speed"] = 15
-       elseif kv["tracktype"] == "grade3" then
-         kv["default_speed"] = 12
-       elseif kv["tracktype"] == "grade4" then
-         kv["default_speed"] = 10
-       end
-     end
-  end
 
   --use unsigned_ref if all the conditions are met.
   if ((kv["name"] == nil and kv["name:en"] == nil and kv["alt_name"] == nil and kv["official_name"] == nil and kv["ref"] == nil and kv["int_ref"] == nil) and

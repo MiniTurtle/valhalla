@@ -891,20 +891,21 @@ struct graph_parser {
       }
     };
     tag_handlers_["max_speed"] = [this]() {
-      try {
-        if (tag_.second == "unlimited") {
-          // this way has an unlimited speed limit (german autobahn)
-          //max_speed_ = kUnlimitedSpeedLimit;
-        } else {
-          max_speed_ = std::stof(tag_.second);
-          way_.set_tagged_speed(true);
-          has_max_speed_ = true;
-        }
-        
+        try {
+          if (tag_.second == "unlimited") {
+              // this way has an unlimited speed limit (german autobahn)
+              max_speed_ = kUnlimitedSpeedLimit;
+              has_max_speed_ = true;
+          } else {
+              max_speed_ = std::stof(tag_.second);
+              way_.set_tagged_speed(true);
+              has_max_speed_ = true;
+          } 
       } catch (const std::out_of_range& oor) {
         LOG_INFO("out_of_range thrown for way id: " + std::to_string(osmid_));
       }
     };
+
     tag_handlers_["average_speed"] = [this]() {
       try {
         average_speed_ = std::stof(tag_.second);
@@ -3059,56 +3060,6 @@ struct graph_parser {
       way_.set_road_class(highway_cutoff_rc_);
     }
 
-    if (way_.ferry() && (!has_max_speed_ || max_speed_ <= 5)) {
-        max_speed_ = kDefaultSpeedLimit_Ferry;
-        has_max_speed_ = true;
-    }
-
-    if (use_road_class_speed_fallback_ && (!has_max_speed_ || max_speed_ <= 5)) {
-        switch (way_.road_class()) {
-          case RoadClass::kMotorway:
-               max_speed_ = kRoadClassDefaultSpeedLimit_Motorway;
-               has_max_speed_ = true;
-               break;
-          case RoadClass::kTrunk:
-               max_speed_ = kRoadClassDefaultSpeedLimit_Trunk;
-               has_max_speed_ = true;
-               break;
-          case RoadClass::kPrimary:
-               max_speed_ = kRoadClassDefaultSpeedLimit_Primary;
-               has_max_speed_ = true;
-               break;
-          case RoadClass::kSecondary:
-               max_speed_ = kRoadClassDefaultSpeedLimit_Secondary;
-               has_max_speed_ = true;
-               break;
-          case RoadClass::kTertiary:
-               max_speed_ = kRoadClassDefaultSpeedLimit_Tertiary;
-               has_max_speed_ = true;
-               break; 
-          case RoadClass::kResidential:
-               max_speed_ = kRoadClassDefaultSpeedLimit_Residential;
-               has_max_speed_ = true;
-               break;
-          case RoadClass::kServiceOther:
-               max_speed_ = kRoadClassDefaultSpeedLimit_ServiceOther;
-               has_max_speed_ = true;
-               break;
-          case RoadClass::kUnclassified:
-               max_speed_ = kRoadClassDefaultSpeedLimit_Unclassified;
-               has_max_speed_ = true;
-               break;
-	      default:
-               break;
-        }
-    } 
-
-    if (!has_default_speed_ || default_speed_ <= 1)
-        if (has_max_speed_) {
-            has_default_speed_ = true;
-            default_speed_ = max_speed_;
-        }
-
     // set the speed
     if (has_average_speed_) {
       way_.set_speed(average_speed_);
@@ -3117,14 +3068,17 @@ struct graph_parser {
     } else if (has_max_speed_ && max_speed_ != kUnlimitedSpeedLimit) {
       // don't use unlimited speed limit for default edge speed
       way_.set_speed(max_speed_);
-    } else if (has_default_speed_ && !way_.forward_tagged_speed() && !way_.backward_tagged_speed()) {
+    } else if (has_default_speed_) {
       way_.set_speed(default_speed_);
     }
 
-    // set the speed limit
     if (has_max_speed_) {
-      way_.set_speed_limit(max_speed_);
-    }
+        if (max_speed_ != kUnlimitedSpeedLimit)
+            way_.set_speed_limit(max_speed_);
+        else
+            way_.set_speed_limit(120);
+    } else
+        way_.set_speed_limit(default_speed_);
 
     // I hope this does not happen, but it probably will (i.e., user sets forward speed
     // and not the backward speed and vice versa.)
@@ -3132,14 +3086,12 @@ struct graph_parser {
       if (!way_.oneway()) {
         way_.set_backward_speed(way_.forward_speed());
         way_.set_backward_tagged_speed(true);
-      } else // fallback to default speed.
-        way_.set_speed(default_speed_);
+      }
     } else if (!way_.forward_tagged_speed() && way_.backward_tagged_speed()) {
       if (!way_.oneway()) {
         way_.set_forward_speed(way_.backward_speed());
         way_.set_forward_tagged_speed(true);
-      } else // fallback to default speed.
-        way_.set_speed(default_speed_);
+      }
     }
 
     // Delete the name from from name field if it exists in the ref.
