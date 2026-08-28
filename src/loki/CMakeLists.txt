@@ -6,6 +6,7 @@ set(sources
   reach.cc
   matrix_action.cc
   all_to_all_action.cc
+  proximity_action.cc
   status_action.cc
   transit_available_action.cc
   polygon_search.cc)

@@ -15,6 +15,7 @@ set(protobuf_descriptors
   matrix.proto
   isochrone.proto
   expansion.proto
+  proximity.proto
   all_to_all.proto)
 
 protobuf_generate_cpp(protobuf_srcs protobuf_hdrs ${protobuf_descriptors})

@@ -65,6 +65,8 @@ std::string actor_t::act(Api& api, const std::function<void()>* interrupt, std::
       return matrix(request_str, interrupt, &api);
     case Options::all_to_all:
       return all_to_all(request_str, interrupt, &api);
+    case Options::proximity:
+      return proximity(request_str, interrupt, &api);
     case Options::optimized_route:
       return optimized_route(request_str, interrupt, &api);
     case Options::isochrone:
@@ -189,6 +191,29 @@ actor_t::all_to_all(const std::string& request_str, const std::function<void()>*
   pimpl->loki_worker.all_to_all(*api);
   // compute the matrix
   auto bytes = pimpl->thor_worker.all_to_all(*api);
+  // if they want you do to do the cleanup automatically
+  if (auto_cleanup) {
+    cleanup();
+  }
+  return bytes;
+}
+
+std::string
+actor_t::proximity(const std::string& request_str, const std::function<void()>* interrupt, Api* api) {
+  // set the interrupts
+  pimpl->set_interrupts(interrupt);
+  // if the caller doesn't want a copy we'll use this dummy
+  Api dummy;
+  if (!api) {
+    api = &dummy;
+  }
+  // parse the request
+  ParseApi(request_str, Options::proximity, *api);
+
+  // check the request and locate the locations in the graph
+  pimpl->loki_worker.proximity(*api);
+  // compute the matrix
+  auto bytes = pimpl->thor_worker.proximity(*api);
   // if they want you do to do the cleanup automatically
   if (auto_cleanup) {
     cleanup();

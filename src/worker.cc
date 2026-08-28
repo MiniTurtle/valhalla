@@ -1091,6 +1091,14 @@ void from_json(rapidjson::Document& doc, Options::Action action, Api& api) {
       throw valhalla_exception_t{116};
     }
   }
+  
+  if (action == Options::proximity) {
+    auto max_search_locations_json = rapidjson::get_child_optional(doc, "/max_search_locations");
+    if (max_search_locations_json) {
+        options.set_max_search_locations(max_search_locations_json->GetUint64());
+    } else
+         throw valhalla_exception_t{116};
+  }
 
   // if not a time dependent route/mapmatch disable time dependent edge speed/flow data sources
   if (options.date_time_type() == Options::no_time && !had_date_time &&

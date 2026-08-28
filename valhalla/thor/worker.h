@@ -17,6 +17,7 @@
 #include <valhalla/thor/centroid.h>
 #include <valhalla/thor/costmatrix.h>
 #include <valhalla/thor/isochrone.h>
+#include <valhalla/thor/proximity.h>
 #include <valhalla/thor/multimodal.h>
 #include <valhalla/thor/timedistancebssmatrix.h>
 #include <valhalla/thor/timedistancematrix.h>
@@ -55,6 +56,7 @@ public:
   void route(Api& request);
   std::string matrix(Api& request);
   std::string all_to_all(Api& request);
+  std::string proximity(Api& request);
   void optimized_route(Api& request);
   std::string isochrones(Api& request);
   void trace_route(Api& request);
@@ -127,6 +129,7 @@ protected:
   TimeDistanceBSSMatrix time_distance_bss_matrix_;
 
   Isochrone isochrone_gen;
+  Proximity proximity_gen;
   std::shared_ptr<meili::MapMatcher> matcher;
   float max_timedep_distance;
   std::unordered_map<std::string, float> max_matrix_distance;

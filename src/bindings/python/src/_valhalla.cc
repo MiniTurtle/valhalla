@@ -65,6 +65,9 @@ PYBIND11_MODULE(_valhalla, m) {
           "all_to_all", [](vt::actor_t& self, std::string& req) { return self.all_to_all(req); },
           "Computes the time and distance between a set of locations and returns them.")
       .def(
+          "proximity", [](vt::actor_t& self, std::string& req) { return self.proximity(req); },
+          "Finds the closest locations and computes the time and distance between them and returns them.")
+      .def(
           "isochrone", [](vt::actor_t& self, std::string& req) { return self.isochrone(req); },
           "Calculates isochrones and isodistances.")
       .def(

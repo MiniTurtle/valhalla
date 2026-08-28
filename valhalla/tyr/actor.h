@@ -95,7 +95,18 @@ public:
                      const std::function<void()>* interrupt = nullptr,
                      Api* api = nullptr);
   
+  /**
+  *  Perform routes from each location to each of the other location
+  */
   std::string all_to_all(const std::string& request_str,
+                     const std::function<void()>* interrupt = nullptr,
+                     Api* api = nullptr);
+  
+  /**
+  *  Perform closest location serach to other location on each location.
+  *  In other words, for each location it will looks for the closest locations
+  */
+  std::string proximity(const std::string& request_str,
                      const std::function<void()>* interrupt = nullptr,
                      Api* api = nullptr);
 

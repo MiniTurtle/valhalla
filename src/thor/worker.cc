@@ -65,7 +65,7 @@ thor_worker_t::thor_worker_t(const boost::property_tree::ptree& _config,
       multi_modal_astar(_config.get_child("thor")), timedep_forward(_config.get_child("thor")),
       timedep_reverse(_config.get_child("thor")), costmatrix_(_config.get_child("thor")),
       time_distance_matrix_(_config.get_child("thor")),
-      time_distance_bss_matrix_(_config.get_child("thor")), isochrone_gen(_config.get_child("thor")),
+      time_distance_bss_matrix_(_config.get_child("thor")), isochrone_gen(_config.get_child("thor")), proximity_gen(_config.get_child("thor")),
       reader(graph_reader ? graph_reader
                           : std::make_shared<baldr::GraphReader>(config.get_child("mjolnir"))),
       matcher_factory(config, reader), controller{},
@@ -80,7 +80,7 @@ thor_worker_t::thor_worker_t(const boost::property_tree::ptree& _config,
         kv.first == "max_radius" || kv.first == "max_timedep_distance" ||
         kv.first == "max_timedep_distance_matrix" || kv.first == "max_alternates" ||
         kv.first == "max_exclude_polygons_length" || kv.first == "skadi" || kv.first == "trace" ||
-        kv.first == "isochrone" || kv.first == "centroid" || kv.first == "status" ||
+        kv.first == "isochrone" || kv.first == "proximity" || kv.first == "centroid" || kv.first == "status" ||
         kv.first == "max_distance_disable_hierarchy_culling" || kv.first == "allow_hard_exclusions" ||
         kv.first == "hierarchy_limits") {
       continue;

@@ -81,6 +81,7 @@ namespace osrm_serializers {
 valhalla output looks like this:
 
 */
+namespace {
 json::ArrayPtr locations_to_array(const google::protobuf::RepeatedPtrField<valhalla::Location>& locs) {
     auto input_locs = json::array({});
     for (const auto& location : locs) {
@@ -93,6 +94,7 @@ json::ArrayPtr locations_to_array(const google::protobuf::RepeatedPtrField<valha
 	}
     }
     return input_locs;
+}
 }
 
 std::string serialize_all_to_all_json(const Api& request, double distance_scale) {

@@ -230,7 +230,7 @@ loki_worker_t::loki_worker_t(const boost::property_tree::ptree& config,
         throw std::runtime_error("Max locations for centroid action must be < 128");
     }
     max_distance.emplace(kv.first, config.get<float>("service_limits." + kv.first + ".max_distance"));
-    if (kv.first != "centroid" && kv.first != "trace" && kv.first != "isochrone") {
+    if (kv.first != "centroid" && kv.first != "trace" && kv.first != "isochrone" && kv.first != "proximity") {
       max_matrix_distance.emplace(kv.first, config.get<float>("service_limits." + kv.first +
                                                               ".max_matrix_distance"));
       max_matrix_locations.emplace(kv.first, config.get<float>("service_limits." + kv.first +

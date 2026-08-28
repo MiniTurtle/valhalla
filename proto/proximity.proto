@@ -1,0 +1,16 @@
+syntax = "proto3";
+option optimize_for = LITE_RUNTIME;
+package valhalla;
+import public "common.proto";
+
+message ProximityTo {
+	uint32 index = 1;
+	float cost = 2;
+	float distance = 3;
+	float time = 4;
+	repeated LatLng shape = 5;
+}
+
+message Proximity {
+	repeated ProximityTo to = 2;
+}

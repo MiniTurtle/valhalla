@@ -93,6 +93,7 @@ int main(int argc, char* argv[]) {
             { "query", Options::query },
 	        { "sources_to_targets", Options::sources_to_targets },
 	        { "all_to_all", Options::all_to_all },
+	        { "proximity", Options::proximity },
 	        { "optimized_route", Options::optimized_route },
 	        { "isochrone", Options::isochrone },
 	        { "trace_route", Options::trace_route },
