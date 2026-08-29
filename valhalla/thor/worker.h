@@ -57,6 +57,7 @@ public:
   std::string matrix(Api& request);
   std::string all_to_all(Api& request);
   std::string proximity(Api& request);
+  std::string group_locations(Api& request);
   void optimized_route(Api& request);
   std::string isochrones(Api& request);
   void trace_route(Api& request);

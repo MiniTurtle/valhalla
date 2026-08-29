@@ -26,6 +26,7 @@ set(sources_with_warnings
   all_to_all_action.cc
   proximity.cc
   proximity_action.cc
+  group_locations_action.cc
   route_matcher.cc
   status_action.cc
   trace_attributes_action.cc

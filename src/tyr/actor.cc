@@ -67,6 +67,8 @@ std::string actor_t::act(Api& api, const std::function<void()>* interrupt, std::
       return all_to_all(request_str, interrupt, &api);
     case Options::proximity:
       return proximity(request_str, interrupt, &api);
+    case Options::group_locations:
+      return group_locations(request_str, interrupt, &api);
     case Options::optimized_route:
       return optimized_route(request_str, interrupt, &api);
     case Options::isochrone:
@@ -195,6 +197,30 @@ actor_t::all_to_all(const std::string& request_str, const std::function<void()>*
   if (auto_cleanup) {
     cleanup();
   }
+  return bytes;
+}
+
+
+std::string
+actor_t::group_locations(const std::string& request_str, const std::function<void()>* interrupt, Api* api) {
+  Api local_api;
+  if (!api)
+    api = &local_api;
+
+  ParseApi(request_str, Options::group_locations, *api);
+
+  if (interrupt) {
+    pimpl->loki_worker.set_interrupt(interrupt);
+  }
+
+  pimpl->loki_worker.group_locations(*api);
+
+  auto bytes = pimpl->thor_worker.group_locations(*api);
+  
+  if (interrupt) {
+    pimpl->loki_worker.set_interrupt(nullptr);
+  }
+
   return bytes;
 }
 

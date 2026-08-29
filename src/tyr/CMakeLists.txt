@@ -9,6 +9,7 @@ set(sources
   route_summary_cache.cc
   all_to_all_serializer.cc
   proximity_serializer.cc
+  group_locations_serializer.cc
   serializers.cc
   transit_available_serializer.cc
   expansion_serializer.cc)

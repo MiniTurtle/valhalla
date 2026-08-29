@@ -37,6 +37,7 @@ std::string serializeMatrix(Api& request);
 
 std::string serialize_all_to_all(Api& request);
 std::string serialize_proximity(Api& request);
+std::string serialize_group_locations(Api& request);
 
 /**
  * Turn grid data contours into geojson

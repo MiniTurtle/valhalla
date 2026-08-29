@@ -106,6 +106,9 @@ public:
   *  Perform closest location serach to other location on each location.
   *  In other words, for each location it will looks for the closest locations
   */
+  std::string group_locations(const std::string& request_str,
+                              const std::function<void()>* interrupt = nullptr,
+                              Api* api = nullptr);
   std::string proximity(const std::string& request_str,
                      const std::function<void()>* interrupt = nullptr,
                      Api* api = nullptr);

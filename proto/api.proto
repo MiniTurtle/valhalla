@@ -10,6 +10,7 @@ import public "status.proto";     // info for status endpoint
 import public "matrix.proto";     // the matrix results
 import public "all_to_all.proto"; // the all_to_all results
 import public "proximity.proto"; // the proximity results
+import public "group_locations.proto";
 import public "isochrone.proto";  // the isochrone results
 import public "expansion.proto";  // the expansion results
 import public "query.proto";      // edge query results
@@ -31,6 +32,7 @@ message Api {
 
    AllToAll all_to_all = 13;
    Proximity proximity = 14;
+   GroupLocations group_locations = 15;
 
   // here we store a bit of info about what happened during request processing (stats/errors/warnings)
   Info info = 20;

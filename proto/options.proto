@@ -393,6 +393,7 @@ message Options {
     all_to_all = 13;
     proximity = 14;
     query = 15;
+    group_locations = 16;
   }
 
   enum DateTimeType {
@@ -536,4 +537,5 @@ message Options {
   repeated uint64 query_edge_id = 61 [packed=true];
   
   uint32 max_search_locations = 62;
+  bool ignore_road_side = 63;
 }

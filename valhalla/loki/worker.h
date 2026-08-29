@@ -39,6 +39,7 @@ public:
   void matrix(Api& request);
   void all_to_all(Api& request);
   void proximity(Api& request);
+  void group_locations(Api& request);
   void isochrones(Api& request);
   void trace(Api& request);
   std::string height(Api& request);
@@ -62,6 +63,7 @@ protected:
   void init_matrix(Api& request);
   void init_all_to_all(Api& request);
   void init_proximity(Api& request);
+  void init_group_locations(Api& request);
   void init_isochrones(Api& request);
   void init_trace(Api& request);
   std::vector<midgard::PointLL> init_height(Api& request);

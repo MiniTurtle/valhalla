@@ -1,0 +1,12 @@
+syntax = "proto3";
+option optimize_for = LITE_RUNTIME;
+package valhalla;
+import public "common.proto";
+
+message GroupLocationsResult {
+	repeated uint32 location_index = 1;
+}
+
+message GroupLocations {
+	repeated GroupLocationsResult results = 1;
+}

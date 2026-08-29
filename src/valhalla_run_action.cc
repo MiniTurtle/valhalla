@@ -102,7 +102,8 @@ int main(int argc, char* argv[]) {
 	        { "transit_available", Options::transit_available },
 	        { "expansion", Options::expansion },
 	        { "centroid", Options::centroid },
-	        { "status", Options::status }
+	        { "status", Options::status },
+	        { "group_locations", Options::group_locations }
         };
 
         std::string str_action = result["action"].as<std::string>();
