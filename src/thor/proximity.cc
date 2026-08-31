@@ -54,6 +54,8 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
 
     // Map edge ids to target locations
     auto locations = *api.mutable_options()->mutable_locations();
+    bool ignore_side = api.options().ignore_road_side();
+    
     for (int32_t index = 0; index < locations.size(); index++) {
         if (index == location_index) continue;
 
@@ -61,13 +63,46 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
         for (auto& e : l.correlation().edges()) {
             valhalla::baldr::GraphId id(e.graph_id());
             edge_id_to_location_index[id].push_back(index);
+            
+            if (ignore_side) {
+                valhalla::baldr::GraphId opp_id = graphreader.GetOpposingEdgeId(id);
+                if (opp_id.Is_Valid()) {
+                    edge_id_to_location_index[opp_id].push_back(index);
+                }
+            }
         }
     }
 
     Initialize(bdedgelabels_, adjacencylist_, costing_->UnitSize());
 
     google::protobuf::RepeatedPtrField<Location> location_origin;
-    location_origin.Add()->CopyFrom(locations.Get(location_index));
+    auto* origin_loc = location_origin.Add();
+    origin_loc->CopyFrom(locations.Get(location_index));
+    
+    if (ignore_side) {
+        auto* correlation = origin_loc->mutable_correlation();
+        int original_size = correlation->edges_size();
+        for (int i = 0; i < original_size; ++i) {
+            valhalla::baldr::GraphId id(correlation->edges(i).graph_id());
+            valhalla::baldr::GraphId opp_id = graphreader.GetOpposingEdgeId(id);
+            if (opp_id.Is_Valid()) {
+                // Check if opposing edge is already in the list
+                bool exists = false;
+                for (int j = 0; j < correlation->edges_size(); ++j) {
+                    if (valhalla::baldr::GraphId(correlation->edges(j).graph_id()) == opp_id) {
+                        exists = true; break;
+                    }
+                }
+                if (!exists) {
+                    auto* new_edge = correlation->add_edges();
+                    new_edge->CopyFrom(correlation->edges(i)); // Copy attributes like percent_along
+                    new_edge->set_graph_id(opp_id);
+                    new_edge->set_percent_along(1.0f - new_edge->percent_along()); // Invert percent along
+                }
+            }
+        }
+    }
+    
     SetOriginLocations(graphreader, location_origin, costing_);
 
     found_locations.clear();
