@@ -62,12 +62,13 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
         auto& l = locations[index];
         for (auto& e : l.correlation().edges()) {
             valhalla::baldr::GraphId id(e.graph_id());
-            edge_id_to_location_index[id].push_back(index);
+            float p = e.percent_along();
+            edge_id_to_location_index[id].push_back(std::make_pair(index, p));
             
             if (ignore_side) {
                 valhalla::baldr::GraphId opp_id = graphreader.GetOpposingEdgeId(id);
                 if (opp_id.Is_Valid()) {
-                    edge_id_to_location_index[opp_id].push_back(index);
+                    edge_id_to_location_index[opp_id].push_back(std::make_pair(index, 1.0f - p));
                 }
             }
         }
@@ -132,7 +133,10 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
         auto edge_id = pred.edgeid();
         auto it = edge_id_to_location_index.find(edge_id);
         if (it != edge_id_to_location_index.end()) {
-            for (auto found_index : it->second) {
+            for (const auto& found_info : it->second) {
+                int32_t found_index = found_info.first;
+                float dest_p = found_info.second;
+                
                 // Have we already recorded this location?
                 auto loc_it = std::find_if(found_locations.begin(), found_locations.end(),
                     [found_index](const ProximityResult& r) { return r.location_index == found_index; });
@@ -140,14 +144,35 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
                 if (loc_it == found_locations.end()) {
                     // FIRST HIT: Because Dijkstra pops by lowest cost, the first time 
                     // we see this location is mathematically the lowest cost path to it!
+                    
+                    const graph_tile_ptr tile = graphreader.GetGraphTile(edge_id);
+                    const auto* edge = tile->directededge(edge_id);
+                    valhalla::sif::Cost edge_cost = costing_->EdgeCost(edge, tile);
+                    
+                    float unused_fraction = 1.0f - dest_p;
+                    float actual_secs = pred.cost().secs - (edge_cost.secs * unused_fraction);
+                    float actual_cost = pred.cost().cost - (edge_cost.cost * unused_fraction);
+                    
+                    float actual_distance = static_cast<float>(pred.path_distance()) - (edge->length() * unused_fraction);
+                    
+                    // If distance or time is negative, this target is physically behind the origin 
+                    // on this directed edge, and cannot be reached going forward. We must skip it
+                    // so Dijkstra finds the real, legal route that loops back around to it!
+                    if (actual_distance < -1.0f || actual_secs < -1.0f) {
+                        continue;
+                    }
+
+                    actual_secs = std::max(0.0f, actual_secs);
+                    actual_cost = std::max(0.0f, actual_cost);
+                    actual_distance = std::max(0.0f, actual_distance);
 
                     auto route_geometry = TraceShape(predindex, graphreader);
 
                     found_locations.push_back({
                         found_index,
-                        static_cast<float>(pred.path_distance()),
-                        pred.cost().secs,
-                        pred.cost().cost,
+                        actual_distance,
+                        actual_secs,
+                        actual_cost,
                         std::move(route_geometry)
                     });
                 }

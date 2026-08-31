@@ -103,7 +103,7 @@ protected:
 
   size_t max_search_locations = 3;
   int32_t location_index = -1;
-  std::unordered_map<baldr::GraphId, std::vector<int32_t>> edge_id_to_location_index;
+  std::unordered_map<baldr::GraphId, std::vector<std::pair<int32_t, float>>> edge_id_to_location_index;
   std::vector<ProximityResult> found_locations;
   float max_meters_ = 0;
   expansion_callback_t inner_expansion_callback_;
