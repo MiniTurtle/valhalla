@@ -54,12 +54,18 @@ std::string serialize_proximity_json(const Api& request, double distance_scale) 
 		        {"lon", json::fixed_t{s.lng(), 6}}}
             ));
 
+        auto overlaps = json::array({});
+        for (auto overlap_index : p.overlapping_locations()) {
+            overlaps->emplace_back(static_cast<uint64_t>(overlap_index));
+        }
+
         auto obj = json::map({
 	        {"index", static_cast<uint64_t>(p.index())},
 	        {"cost", json::fixed_t{p.cost(), 6}},
 	        {"distance", json::fixed_t{p.distance(), 6}},
 	        {"time", json::fixed_t{p.time(), 6}},
-	        {"shape", shape}
+	        {"shape", shape},
+            {"overlaps", overlaps}
         });
         array->emplace_back(obj);
     }

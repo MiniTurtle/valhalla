@@ -9,6 +9,7 @@ message ProximityTo {
 	float distance = 3;
 	float time = 4;
 	repeated LatLng shape = 5;
+	repeated uint32 overlapping_locations = 6;
 }
 
 message Proximity {

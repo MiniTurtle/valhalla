@@ -166,6 +166,31 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
                     actual_cost = std::max(0.0f, actual_cost);
                     actual_distance = std::max(0.0f, actual_distance);
 
+                    std::vector<int32_t> overlaps;
+                    uint32_t trace_current = predindex;
+                    while (trace_current != valhalla::baldr::kInvalidLabel) {
+                        auto trace_edge_id = bdedgelabels_[trace_current].edgeid();
+                        auto overlap_it = edge_id_to_location_index.find(trace_edge_id);
+                        if (overlap_it != edge_id_to_location_index.end()) {
+                            for (const auto& info : overlap_it->second) {
+                                int32_t olap_idx = info.first;
+                                // Exclude the current target and the origin from being considered an "overlap"
+                                if (olap_idx != found_index && olap_idx != location_index) {
+                                    // ONLY include it if it has ALREADY been found by Dijkstra
+                                    auto olap_loc_it = std::find_if(found_locations.begin(), found_locations.end(),
+                                        [olap_idx](const ProximityResult& r) { return r.location_index == olap_idx; });
+                                    
+                                    if (olap_loc_it != found_locations.end()) {
+                                        if (std::find(overlaps.begin(), overlaps.end(), olap_idx) == overlaps.end()) {
+                                            overlaps.push_back(olap_idx);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        trace_current = bdedgelabels_[trace_current].predecessor();
+                    }
+
                     auto route_geometry = TraceShape(predindex, graphreader);
 
                     found_locations.push_back({
@@ -173,7 +198,8 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
                         actual_distance,
                         actual_secs,
                         actual_cost,
-                        std::move(route_geometry)
+                        std::move(route_geometry),
+                        std::move(overlaps)
                     });
                 }
             }

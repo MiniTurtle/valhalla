@@ -33,6 +33,7 @@ public:
         float time_seconds;
         float cost;
         std::vector<midgard::PointLL> shape;
+        std::vector<int32_t> overlapping_locations;
     };
 public:
   /**

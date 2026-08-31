@@ -73,6 +73,9 @@ std::string thor_worker_t::proximity(Api& request) {
             loc->set_lat(s.lat());
             loc->set_lng(s.lng());
         }
+        for (auto overlap : r.overlapping_locations) {
+            p->add_overlapping_locations(overlap);
+        }
     }
 
     // make the final output (pbf, json or geotiff)
