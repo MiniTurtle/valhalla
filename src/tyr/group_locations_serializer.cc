@@ -31,6 +31,18 @@ std::string serialize_group_locations(Api& request) {
 
   writer.EndArray();
 
+  writer.Key("dead_end_side");
+  writer.StartArray();
+
+  if (request.has_group_locations()) {
+    const auto& group_locations = request.group_locations();
+    for (const auto& result : group_locations.results()) {
+      writer.Int(result.dead_end_side());
+    }
+  }
+
+  writer.EndArray();
+
   writer.Key("snapped_locations");
   writer.StartArray();
   if (request.has_group_locations()) {

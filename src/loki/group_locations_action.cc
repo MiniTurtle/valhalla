@@ -76,6 +76,46 @@ void loki_worker_t::group_locations(Api& request) {
       });
 
       auto result = group_locations_res->add_results();
+      
+      // Determine if either end of the edge is a dead end
+      if (!points.empty()) {
+        auto edge_id = points.front().edge_id;
+        auto tile = reader->GetGraphTile(edge_id);
+        if (tile) {
+          const auto* edge = tile->directededge(edge_id);
+          if (edge) {
+            auto endnode_id = edge->endnode();
+            auto end_tile = reader->GetGraphTile(endnode_id);
+            if (end_tile) {
+              const auto* end_node = end_tile->node(endnode_id);
+              if (end_node && end_node->edge_count() == 1) {
+                // If edge_id direction points to a dead end, that's side 2 (end)
+                result->set_dead_end_side(2);
+              }
+            }
+
+            // Check the start node (end node of the opposing edge)
+            auto opp_id = reader->GetOpposingEdgeId(edge_id);
+            if (opp_id.Is_Valid()) {
+              auto opp_tile = reader->GetGraphTile(opp_id);
+              if (opp_tile) {
+                const auto* opp_edge = opp_tile->directededge(opp_id);
+                if (opp_edge) {
+                  auto startnode_id = opp_edge->endnode();
+                  auto start_tile = reader->GetGraphTile(startnode_id);
+                  if (start_tile) {
+                    const auto* start_node = start_tile->node(startnode_id);
+                    if (start_node && start_node->edge_count() == 1) {
+                      result->set_dead_end_side(1);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
       for (const auto& pt : points) {
         result->add_location_index(pt.original_index);
         

@@ -11,6 +11,7 @@ message SnappedLocation {
 message GroupLocationsResult {
 	repeated uint32 location_index = 1;
     repeated SnappedLocation locations = 2;
+    int32 dead_end_side = 3;
 }
 
 message GroupLocations {
