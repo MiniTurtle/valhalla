@@ -167,9 +167,17 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
                     actual_cost = std::max(0.0f, actual_cost);
                     actual_distance = std::max(0.0f, actual_distance);
 
+                    std::vector<uint32_t> path_indices;
+                    uint32_t current_idx = predindex;
+                    while (current_idx != valhalla::baldr::kInvalidLabel) {
+                        path_indices.push_back(current_idx);
+                        current_idx = bdedgelabels_[current_idx].predecessor();
+                    }
+                    std::reverse(path_indices.begin(), path_indices.end());
+
                     std::vector<int32_t> overlaps;
-                    uint32_t trace_current = predindex;
-                    while (trace_current != valhalla::baldr::kInvalidLabel) {
+                    for (size_t i = 0; i < path_indices.size(); i++) {
+                        uint32_t trace_current = path_indices[i];
                         auto trace_edge_id = bdedgelabels_[trace_current].edgeid();
                         auto overlap_it = edge_id_to_location_index.find(trace_edge_id);
                         if (overlap_it != edge_id_to_location_index.end()) {
@@ -177,11 +185,11 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
                             float min_p = 0.0f;
                             float max_p = 1.0f;
                             
-                            if (trace_current == predindex) {
+                            if (i == path_indices.size() - 1) {
                                 max_p = dest_p;
                             }
                             
-                            if (bdedgelabels_[trace_current].predecessor() == valhalla::baldr::kInvalidLabel) {
+                            if (i == 0) {
                                 for (int e_idx = 0; e_idx < origin_loc->correlation().edges_size(); ++e_idx) {
                                     if (valhalla::baldr::GraphId(origin_loc->correlation().edges(e_idx).graph_id()) == trace_edge_id) {
                                         min_p = origin_loc->correlation().edges(e_idx).percent_along();
@@ -190,6 +198,7 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
                                 }
                             }
 
+                            std::vector<std::pair<int32_t, float>> edge_overlaps;
                             for (const auto& info : overlap_it->second) {
                                 float olap_p = info.second;
                                 // Add a small epsilon for floating point inaccuracies
@@ -200,19 +209,21 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
                                 int32_t olap_idx = info.first;
                                 // Exclude the current target and the origin from being considered an "overlap"
                                 if (olap_idx != found_index && olap_idx != location_index) {
-                                    // ONLY include it if it has ALREADY been found by Dijkstra
-                                    auto olap_loc_it = std::find_if(found_locations.begin(), found_locations.end(),
-                                        [olap_idx](const ProximityResult& r) { return r.location_index == olap_idx; });
-                                    
-                                    if (olap_loc_it != found_locations.end()) {
-                                        if (std::find(overlaps.begin(), overlaps.end(), olap_idx) == overlaps.end()) {
-                                            overlaps.push_back(olap_idx);
-                                        }
-                                    }
+                                    edge_overlaps.push_back(info);
+                                }
+                            }
+
+                            // Sort overlaps on this edge by percent_along (order of traversal)
+                            std::sort(edge_overlaps.begin(), edge_overlaps.end(), [](const auto& a, const auto& b) {
+                                return a.second < b.second;
+                            });
+
+                            for (const auto& info : edge_overlaps) {
+                                if (std::find(overlaps.begin(), overlaps.end(), info.first) == overlaps.end()) {
+                                    overlaps.push_back(info.first);
                                 }
                             }
                         }
-                        trace_current = bdedgelabels_[trace_current].predecessor();
                     }
 
                     auto route_geometry = TraceShape(predindex, graphreader, dest_p, *origin_loc);
