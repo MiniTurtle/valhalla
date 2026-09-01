@@ -1,6 +1,7 @@
 #include "thor/proximity.h"
 #include "midgard/distanceapproximator.h"
 #include "midgard/logging.h"
+#include "midgard/util.h"
 
 #include <algorithm>
 
@@ -172,7 +173,30 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
                         auto trace_edge_id = bdedgelabels_[trace_current].edgeid();
                         auto overlap_it = edge_id_to_location_index.find(trace_edge_id);
                         if (overlap_it != edge_id_to_location_index.end()) {
+                            
+                            float min_p = 0.0f;
+                            float max_p = 1.0f;
+                            
+                            if (trace_current == predindex) {
+                                max_p = dest_p;
+                            }
+                            
+                            if (bdedgelabels_[trace_current].predecessor() == valhalla::baldr::kInvalidLabel) {
+                                for (int e_idx = 0; e_idx < origin_loc->correlation().edges_size(); ++e_idx) {
+                                    if (valhalla::baldr::GraphId(origin_loc->correlation().edges(e_idx).graph_id()) == trace_edge_id) {
+                                        min_p = origin_loc->correlation().edges(e_idx).percent_along();
+                                        break;
+                                    }
+                                }
+                            }
+
                             for (const auto& info : overlap_it->second) {
+                                float olap_p = info.second;
+                                // Add a small epsilon for floating point inaccuracies
+                                if (olap_p < min_p - 0.001f || olap_p > max_p + 0.001f) {
+                                    continue;
+                                }
+
                                 int32_t olap_idx = info.first;
                                 // Exclude the current target and the origin from being considered an "overlap"
                                 if (olap_idx != found_index && olap_idx != location_index) {
@@ -191,7 +215,7 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
                         trace_current = bdedgelabels_[trace_current].predecessor();
                     }
 
-                    auto route_geometry = TraceShape(predindex, graphreader);
+                    auto route_geometry = TraceShape(predindex, graphreader, dest_p, *origin_loc);
 
                     found_locations.push_back({
                         found_index,
@@ -222,7 +246,7 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
     return found_locations;
 }
 
-std::vector<midgard::PointLL> Proximity::TraceShape(uint32_t predindex, baldr::GraphReader& graphreader) {
+std::vector<midgard::PointLL> Proximity::TraceShape(uint32_t predindex, baldr::GraphReader& graphreader, float dest_p, const valhalla::Location& origin_loc) {
     std::vector<uint32_t> path_indices;
     uint32_t current = predindex;
     
@@ -238,7 +262,8 @@ std::vector<midgard::PointLL> Proximity::TraceShape(uint32_t predindex, baldr::G
     // 3. Build the continuous physical shape
     std::vector<midgard::PointLL> full_shape;
     
-    for (uint32_t idx : path_indices) {
+    for (size_t i = 0; i < path_indices.size(); i++) {
+        uint32_t idx = path_indices[i];
         const auto& label = bdedgelabels_[idx];
         auto edge_id = label.edgeid();
         
@@ -251,14 +276,36 @@ std::vector<midgard::PointLL> Proximity::TraceShape(uint32_t predindex, baldr::G
         auto edge_info = tile->edgeinfo(edge);
         const auto& shape = edge_info.shape();
         
-        // If the edge was traversed backwards in the graph, we must reverse its shape
+        float s_p = 0.0f;
+        float e_p = 1.0f;
+        
+        if (i == 0) {
+            // Find origin percent_along
+            for (int e_idx = 0; e_idx < origin_loc.correlation().edges_size(); ++e_idx) {
+                const auto& e = origin_loc.correlation().edges(e_idx);
+                if (valhalla::baldr::GraphId(e.graph_id()) == edge_id) {
+                    s_p = e.percent_along();
+                    break;
+                }
+            }
+        }
+        
+        if (i == path_indices.size() - 1) {
+            e_p = dest_p;
+        }
+
+        std::vector<midgard::PointLL> edge_shape;
         if (edge->forward()) {
-            // Prevent coordinate duplication where two edges meet
-            auto start_it = (full_shape.empty()) ? shape.begin() : shape.begin() + 1;
-            full_shape.insert(full_shape.end(), start_it, shape.end());
+            edge_shape = valhalla::midgard::trim_polyline(shape.begin(), shape.end(), s_p, e_p);
         } else {
-            auto start_it = (full_shape.empty()) ? shape.rbegin() : shape.rbegin() + 1;
-            full_shape.insert(full_shape.end(), start_it, shape.rend());
+            // Reversing the shape because edge is backward
+            std::vector<midgard::PointLL> reversed_shape(shape.rbegin(), shape.rend());
+            edge_shape = valhalla::midgard::trim_polyline(reversed_shape.begin(), reversed_shape.end(), s_p, e_p);
+        }
+
+        auto start_it = (full_shape.empty() || edge_shape.empty()) ? edge_shape.begin() : edge_shape.begin() + 1;
+        if (start_it < edge_shape.end()) {
+            full_shape.insert(full_shape.end(), start_it, edge_shape.end());
         }
     }
     

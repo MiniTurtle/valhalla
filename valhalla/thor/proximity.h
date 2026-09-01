@@ -100,7 +100,7 @@ protected:
 
   void CalculateMaxDistance(const valhalla::Api& api);
 
-  std::vector<midgard::PointLL> TraceShape(uint32_t predindex, baldr::GraphReader& graphreader);
+  std::vector<midgard::PointLL> TraceShape(uint32_t predindex, baldr::GraphReader& graphreader, float dest_p, const valhalla::Location& origin_loc);
 
   size_t max_search_locations = 3;
   int32_t location_index = -1;
