@@ -3,8 +3,14 @@ option optimize_for = LITE_RUNTIME;
 package valhalla;
 import public "common.proto";
 
+message SnappedLocation {
+    uint32 location_index = 1;
+    LatLng snapped_point = 2;
+}
+
 message GroupLocationsResult {
 	repeated uint32 location_index = 1;
+    repeated SnappedLocation locations = 2;
 }
 
 message GroupLocations {

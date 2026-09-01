@@ -36,6 +36,7 @@ void loki_worker_t::group_locations(Api& request) {
       uint32_t original_index;
       GraphId edge_id;
       float percent_along;
+      valhalla::midgard::PointLL projected;
     };
 
     // We will group by an undirected identifier.
@@ -49,6 +50,7 @@ void loki_worker_t::group_locations(Api& request) {
 
       GraphId edge_id = projection.edges.front().id;
       float percent = projection.edges.front().percent_along;
+      auto projected = projection.edges.front().projected;
 
       uint64_t group_key = edge_id.value;
       if (ignore_road_side) {
@@ -60,7 +62,7 @@ void loki_worker_t::group_locations(Api& request) {
         }
       }
 
-      groups[group_key].push_back({static_cast<uint32_t>(i), edge_id, percent});
+      groups[group_key].push_back({static_cast<uint32_t>(i), edge_id, percent, projected});
     }
 
     // Prepare response
@@ -76,6 +78,11 @@ void loki_worker_t::group_locations(Api& request) {
       auto result = group_locations_res->add_results();
       for (const auto& pt : points) {
         result->add_location_index(pt.original_index);
+        
+        auto snapped = result->add_locations();
+        snapped->set_location_index(pt.original_index);
+        snapped->mutable_snapped_point()->set_lat(pt.projected.lat());
+        snapped->mutable_snapped_point()->set_lng(pt.projected.lng());
       }
     }
 
