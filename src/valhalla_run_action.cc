@@ -65,7 +65,8 @@ int main(int argc, char* argv[]) {
           ("f,json-file", "File containing the JSON query", cxxopts::value<std::string>())
           ("c,config", "Valhalla configuration file", cxxopts::value<std::string>())
           ("i,inline-config", "Inline JSON config", cxxopts::value<std::string>())
-          ("a,action", "Action type: route, locate, query, sources_to_targets, all_to_all, optimized_route, isochrone, trace_route, trace_attributes, height, transit_available, expansion, centroid & status", cxxopts::value<std::string>());
+          ("a,action", "Action type: route, locate, query, sources_to_targets, all_to_all, optimized_route, isochrone, trace_route, trace_attributes, height, transit_available, expansion, centroid & status", cxxopts::value<std::string>())
+          ("n,network", "Read JSON payload from standard input (stdin)");
 	    // clang-format on
 
 	    auto result = options.parse(argc, argv);
@@ -74,6 +75,9 @@ int main(int argc, char* argv[]) {
 
 	    if (result.count("json-file") && result.count("json")) {
 	        LOG_WARN("json and json-file option are set, using json-file content");
+	    } else if (result.count("network")) {
+	        json_str.assign((std::istreambuf_iterator<char>(std::cin)),
+			        (std::istreambuf_iterator<char>()));
 	    } else if (result.count("json-file")) {
 	        std::ifstream ifs(result["json-file"].as<std::string>());
 	        json_str.assign((std::istreambuf_iterator<char>(ifs)),
@@ -81,7 +85,7 @@ int main(int argc, char* argv[]) {
 	    } else if (result.count("json")) {
 	        json_str = result["json"].as<std::string>();
 	    } else {
-	        throw cxxopts::exceptions::exception("Either json or json-file args must be set.");
+	        throw cxxopts::exceptions::exception("Either json, json-file or network args must be set.");
 	    }
 
         if (!result.count("action")) 
