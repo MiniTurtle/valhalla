@@ -67,7 +67,7 @@ void loki_worker_t::proximity(Api& request) {
   if (options.locations_size() < 2) {
     throw valhalla_exception_t{150, "Requires at least 2 locations"};
   };
-  if (options.locations_size() > max_locations.find("proximity")->second) {
+  if ((size_t)options.locations_size() > max_locations.find("proximity")->second) {
     throw valhalla_exception_t{150, std::to_string(max_locations.find("proximity")->second)};
   };
 
