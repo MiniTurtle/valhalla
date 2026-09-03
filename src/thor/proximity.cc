@@ -57,6 +57,7 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
     auto locations = *api.mutable_options()->mutable_locations();
     bool ignore_side = api.options().ignore_road_side();
     
+    edge_id_to_location_index.clear();
     for (int32_t index = 0; index < locations.size(); index++) {
         if (index == location_index) continue;
 
@@ -147,8 +148,12 @@ std::vector<Proximity::ProximityResult> Proximity::FindProximity(const Expansion
                     // we see this location is mathematically the lowest cost path to it!
                     
                     const graph_tile_ptr tile = graphreader.GetGraphTile(edge_id);
+                    if (!tile) {
+                        continue;
+                    }
                     const auto* edge = tile->directededge(edge_id);
                     valhalla::sif::Cost edge_cost = costing_->EdgeCost(edge, tile);
+
                     
                     float unused_fraction = 1.0f - dest_p;
                     float actual_secs = pred.cost().secs - (edge_cost.secs * unused_fraction);
