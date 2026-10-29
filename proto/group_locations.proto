@@ -9,11 +9,28 @@ message SnappedLocation {
 }
 
 message GroupLocationsResult {
-	repeated uint32 location_index = 1;
+    repeated uint32 location_index = 1;
     repeated SnappedLocation locations = 2;
     int32 dead_end_side = 3;
 }
 
+message ChokePoint {
+    LatLng point = 1;
+    uint64 edge_id = 2;
+    bool is_one_way = 3;
+}
+
+message LineString {
+    repeated LatLng points = 1;
+}
+
+message Partition {
+    repeated uint32 group_indices = 1;
+    repeated ChokePoint choke_points = 2;
+    repeated LineString boundary_lines = 3;
+}
+
 message GroupLocations {
-	repeated GroupLocationsResult results = 1;
+    repeated GroupLocationsResult results = 1;
+    repeated Partition partitions = 2;
 }
