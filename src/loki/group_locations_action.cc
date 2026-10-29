@@ -11,20 +11,42 @@
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
+#include <map>
+#include <set>
 #include <algorithm>
-
 #include <queue>
 #include <cmath>
+#include <tuple>
+#include <memory>
+#include <numeric>
+#include <cstdint>
+#include <functional>
+#include <iostream>
 
 namespace valhalla {
 namespace loki {
 
 namespace {
 
+// -----------------------------------------------------------------------------
+// Basic Graph & Edge Helpers
+// -----------------------------------------------------------------------------
+baldr::GraphId edge_end_node(const baldr::GraphId& edge_id, baldr::GraphReader& reader) {
+    if (!edge_id.Is_Valid()) return {};
+    auto tile = reader.GetGraphTile(edge_id);
+    if (!tile) return {};
+    const auto* de = tile->directededge(edge_id);
+    return de ? de->endnode() : baldr::GraphId{};
+}
+
+baldr::GraphId edge_start_node(const baldr::GraphId& edge_id, baldr::GraphReader& reader) {
+    return edge_end_node(reader.GetOpposingEdgeId(edge_id), reader);
+}
+
 uint64_t get_canonical_edge_val(const baldr::GraphId& edge_id,
                                 baldr::GraphReader& reader,
                                 bool ignore_road_side) {
-    if (!ignore_road_side) {
+    if (!ignore_road_side || !edge_id.Is_Valid()) {
         return edge_id.value;
     }
     baldr::GraphId opp_id = reader.GetOpposingEdgeId(edge_id);
@@ -36,100 +58,15 @@ uint64_t get_canonical_edge_val(const baldr::GraphId& edge_id,
 
 bool is_traversable_edge(const baldr::DirectedEdge* edge) {
     if (!edge) return false;
-    if (edge->is_shortcut() || edge->use() == baldr::Use::kTransitConnection ||
-        edge->use() == baldr::Use::kEgressConnection || edge->use() == baldr::Use::kPlatformConnection) {
+    if (edge->is_shortcut() || 
+        edge->use() == baldr::Use::kTransitConnection ||
+        edge->use() == baldr::Use::kEgressConnection || 
+        edge->use() == baldr::Use::kPlatformConnection) {
         return false;
     }
     return true;
 }
 
-}
-}
-}
-
-//
-// Partitions (Voronoi Region-Adjacency Graph & Bridge Cutter)
-//
-namespace valhalla {
-namespace loki {
-
-namespace {
-
-struct PartitionChokePoint {
-    midgard::PointLL point;
-    baldr::GraphId edge_id;
-    bool is_one_way = false;
-};
-
-struct CandidatePartition {
-    std::unordered_set<uint32_t> group_indices;
-    std::vector<PartitionChokePoint> chokes;
-    float score = 0.0f;
-};
-
-PartitionChokePoint make_choke_point(const baldr::GraphId& boundary_edge_id,
-                                     baldr::GraphReader& reader) {
-    PartitionChokePoint cp;
-    cp.edge_id = boundary_edge_id;
-
-    auto tile = reader.GetGraphTile(boundary_edge_id);
-    if (!tile) return cp;
-    const auto* edge = tile->directededge(boundary_edge_id);
-    if (!edge) return cp;
-
-    baldr::GraphId opp_id = reader.GetOpposingEdgeId(boundary_edge_id);
-    cp.is_one_way = !opp_id.Is_Valid();
-
-    const auto edge_info = tile->edgeinfo(edge);
-    const auto& shape = edge_info.shape();
-
-    if (!shape.empty()) {
-        // Place at the midpoint of the boundary edge shape
-        size_t mid = shape.size() / 2;
-        if (shape.size() == 2) {
-            float lat = 0.5f * (shape[0].lat() + shape[1].lat());
-            float lng = 0.5f * (shape[0].lng() + shape[1].lng());
-            cp.point = midgard::PointLL(lng, lat);
-        } else {
-            cp.point = shape[mid];
-        }
-    }
-    return cp;
-}
-
-//Traces the exact shortest path between two adjacent Voronoi owners to find the true bottleneck edge
-baldr::GraphId find_bottleneck_edge_between(
-    uint64_t border_edge_a,
-    uint64_t border_edge_b,
-    const std::unordered_map<uint64_t, uint64_t>& parent_canon_edge,
-    baldr::GraphReader& reader) {
-
-    // Walk a few steps up the tree from the border collision to pick the cleanest bridge segment
-    uint64_t curr = border_edge_a;
-    for (int i = 0; i < 2; ++i) {
-        auto it = parent_canon_edge.find(curr);
-        if (it == parent_canon_edge.end() || it->second == curr) break;
-        curr = it->second;
-    }
-    return baldr::GraphId(curr);
-}
-
-} // namespace
-} // namespace loki
-} // namespace valhalla
-
-namespace valhalla {
-namespace loki {
-
-namespace {
-
-struct CollisionBridge {
-    uint64_t edge_in_a; // Edge inside Group A reaching toward boundary
-    uint64_t edge_in_b; // Edge inside Group B reaching toward boundary
-    baldr::GraphId cut_edge;
-};
-
-// Safe shape extraction ensuring correct tile/edge resolution
 std::vector<midgard::PointLL> get_edge_shape(const baldr::GraphId& edge_id, baldr::GraphReader& reader) {
     if (!edge_id.Is_Valid()) return {};
     auto tile = reader.GetGraphTile(edge_id);
@@ -139,123 +76,10 @@ std::vector<midgard::PointLL> get_edge_shape(const baldr::GraphId& edge_id, bald
     return tile->edgeinfo(de).shape();
 }
 
-// Emits an edge and walks backwards up the Dijkstra tree to the root of its Voronoi cell
-void trace_back_to_root(
-    uint64_t start_canon,
-    const std::unordered_set<uint32_t>& partition_groups,
-    const std::unordered_map<uint64_t, uint64_t>& parent_canon,
-    const std::unordered_map<uint64_t, baldr::GraphId>& canon_rep_edge,
-    const std::unordered_map<uint64_t, uint32_t>& canon_owner,
-    std::unordered_set<uint64_t>& emitted_canon_edges,
-    std::vector<std::vector<midgard::PointLL>>& result_lines,
-    baldr::GraphReader& reader) {
+// -----------------------------------------------------------------------------
+// Dead-End Detection Helpers
+// -----------------------------------------------------------------------------
 
-    uint64_t curr = start_canon;
-    const size_t MAX_STEPS = 256;
-    size_t steps = 0;
-
-    while (steps++ < MAX_STEPS) {
-        // Emit current edge
-        if (emitted_canon_edges.insert(curr).second) {
-            auto rep_it = canon_rep_edge.find(curr);
-            if (rep_it != canon_rep_edge.end() && rep_it->second.Is_Valid()) {
-                auto shape = get_edge_shape(rep_it->second, reader);
-                if (shape.size() >= 2) {
-                    result_lines.push_back(std::move(shape));
-                }
-            }
-        }
-
-        auto p_it = parent_canon.find(curr);
-        if (p_it == parent_canon.end()) break;
-
-        uint64_t parent = p_it->second;
-        if (parent == curr) break; // Reached root / origin seed
-
-        // Verify parent is still within this partition's groups
-        auto o_it = canon_owner.find(parent);
-        if (o_it == canon_owner.end() || !partition_groups.count(o_it->second)) {
-            break;
-        }
-
-        curr = parent;
-    }
-}
-
-std::vector<std::vector<midgard::PointLL>> build_partition_connected_subgraph(
-    const std::unordered_set<uint32_t>& partition_groups,
-    const std::vector<std::vector<baldr::GraphId>>& group_raw_edges,
-    const std::vector<CollisionBridge>& partition_bridges,
-    const std::unordered_map<uint64_t, uint64_t>& parent_canon,
-    const std::unordered_map<uint64_t, baldr::GraphId>& canon_rep_edge,
-    const std::unordered_map<uint64_t, uint32_t>& canon_owner,
-    baldr::GraphReader& reader) {
-
-    std::vector<std::vector<midgard::PointLL>> result_lines;
-    std::unordered_set<uint64_t> emitted_canon_edges;
-
-    auto emit_single_edge = [&](uint64_t c_val, const baldr::GraphId& fallback_id) {
-        if (!emitted_canon_edges.insert(c_val).second) return;
-        baldr::GraphId eid = fallback_id;
-        auto rep_it = canon_rep_edge.find(c_val);
-        if (rep_it != canon_rep_edge.end() && rep_it->second.Is_Valid()) {
-            eid = rep_it->second;
-        }
-        auto shape = get_edge_shape(eid, reader);
-        if (shape.size() >= 2) {
-            result_lines.push_back(std::move(shape));
-        }
-    };
-
-    // 1. Emit all raw seed edges belonging to every group in the partition
-    for (uint32_t gid : partition_groups) {
-        if (gid >= group_raw_edges.size()) continue;
-        for (const auto& eid : group_raw_edges[gid]) {
-            if (!eid.Is_Valid()) continue;
-            uint64_t c = get_canonical_edge_val(eid, reader, true);
-            emit_single_edge(c, eid);
-        }
-    }
-
-    // 2. Process all bridges (choke points to outside + connectors between internal groups)
-    for (const auto& bridge : partition_bridges) {
-        // Emit the physical cut-edge itself
-        uint64_t cut_c = get_canonical_edge_val(bridge.cut_edge, reader, true);
-        emit_single_edge(cut_c, bridge.cut_edge);
-
-        // Trace backward into Group A's territory
-        auto owner_a = canon_owner.find(bridge.edge_in_a);
-        if (owner_a != canon_owner.end() && partition_groups.count(owner_a->second)) {
-            trace_back_to_root(
-                bridge.edge_in_a, partition_groups, parent_canon,
-                canon_rep_edge, canon_owner, emitted_canon_edges, result_lines, reader);
-        }
-
-        // Trace backward into Group B's territory
-        auto owner_b = canon_owner.find(bridge.edge_in_b);
-        if (owner_b != canon_owner.end() && partition_groups.count(owner_b->second)) {
-            trace_back_to_root(
-                bridge.edge_in_b, partition_groups, parent_canon,
-                canon_rep_edge, canon_owner, emitted_canon_edges, result_lines, reader);
-        }
-    }
-
-    return result_lines;
-}
-
-} // namespace
-} // namespace loki
-} // namespace valhalla
-
-//
-// Grouping.
-//
-namespace valhalla {
-namespace loki {
-
-namespace {
-
-// Checks if driving forward along `start_edge_id` enters a strict, loop-free dead-end tree.
 bool is_closed_dead_end_subtree(const baldr::GraphId& start_edge_id,
                                 baldr::GraphReader& reader) {
     if (!start_edge_id.Is_Valid()) return false;
@@ -285,9 +109,7 @@ bool is_closed_dead_end_subtree(const baldr::GraphId& start_edge_id,
     float total_subtree_length = 0.0f;
 
     while (!stack.empty()) {
-        if (++explored > MAX_SUBTREE_EDGES) {
-            return false;
-        }
+        if (++explored > MAX_SUBTREE_EDGES) return false;
 
         baldr::GraphId curr_id = stack.back();
         stack.pop_back();
@@ -298,16 +120,10 @@ bool is_closed_dead_end_subtree(const baldr::GraphId& start_edge_id,
         if (!is_traversable_edge(edge)) return false;
 
         total_subtree_length += static_cast<float>(edge->length());
-        if (total_subtree_length > MAX_SUBTREE_LENGTH_M) {
-            return false;
-        }
+        if (total_subtree_length > MAX_SUBTREE_LENGTH_M) return false;
 
         baldr::GraphId endnode_id = edge->endnode();
-
-        // Cycle/loop check
-        if (visited_nodes.count(endnode_id.value)) {
-            return false;
-        }
+        if (visited_nodes.count(endnode_id.value)) return false;
         visited_nodes.insert(endnode_id.value);
 
         auto end_tile = reader.GetGraphTile(endnode_id);
@@ -315,33 +131,20 @@ bool is_closed_dead_end_subtree(const baldr::GraphId& start_edge_id,
         const auto* end_node = end_tile->node(endnode_id);
         if (!end_node) return false;
 
-        // Hierarchy transition means connection to arterial/highway network
-        if (end_node->transition_count() > 0) {
-            return false;
-        }
-
-        // Terminal dead-end tip
-        if (end_node->edge_count() <= 1) {
-            continue;
-        }
+        if (end_node->transition_count() > 0) return false;
+        if (end_node->edge_count() <= 1) continue;
 
         baldr::GraphId opp_curr = reader.GetOpposingEdgeId(curr_id);
 
         for (uint32_t i = 0; i < end_node->edge_count(); ++i) {
             baldr::GraphId next_id(endnode_id.tileid(), endnode_id.level(), end_node->edge_index() + i);
-            if (next_id == opp_curr) {
-                continue;
-            }
+            if (next_id == opp_curr) continue;
 
             const auto* next_edge = end_tile->directededge(next_id);
-            if (!is_traversable_edge(next_edge)) {
-                continue;
-            }
+            if (!is_traversable_edge(next_edge)) continue;
 
             uint64_t canon_next = get_canonical_edge_val(next_id, reader, true);
-            if (visited_undirected_edges.count(canon_next)) {
-                return false;
-            }
+            if (visited_undirected_edges.count(canon_next)) return false;
 
             visited_undirected_edges.insert(canon_next);
             stack.push_back(next_id);
@@ -374,9 +177,7 @@ SubtreeTrace climb_to_dead_end_root(const baldr::GraphId& edge_id,
     bool fwd_closed = is_closed_dead_end_subtree(edge_id, reader);
     bool bwd_closed = opp_id.Is_Valid() && is_closed_dead_end_subtree(opp_id, reader);
 
-    if (fwd_closed == bwd_closed) {
-        return trace;
-    }
+    if (fwd_closed == bwd_closed) return trace;
 
     trace.in_dead_end = true;
 
@@ -411,25 +212,17 @@ SubtreeTrace climb_to_dead_end_root(const baldr::GraphId& edge_id,
         auto node_tile = reader.GetGraphTile(start_node_id);
         if (!node_tile) break;
         const auto* node = node_tile->node(start_node_id);
-        if (!node || node->edge_count() <= 1) break;
-
-        if (node->transition_count() > 0) {
-            break;
-        }
+        if (!node || node->edge_count() <= 1 || node->transition_count() > 0) break;
 
         baldr::GraphId open_exit_edge;
         uint32_t open_exit_count = 0;
 
         for (uint32_t i = 0; i < node->edge_count(); ++i) {
             baldr::GraphId branch_id(start_node_id.tileid(), start_node_id.level(), node->edge_index() + i);
-            if (branch_id == curr_inward) {
-                continue;
-            }
+            if (branch_id == curr_inward) continue;
 
             const auto* branch_edge = node_tile->directededge(branch_id);
-            if (!is_traversable_edge(branch_edge)) {
-                continue;
-            }
+            if (!is_traversable_edge(branch_edge)) continue;
 
             if (!is_closed_dead_end_subtree(branch_id, reader)) {
                 open_exit_edge = branch_id;
@@ -437,19 +230,13 @@ SubtreeTrace climb_to_dead_end_root(const baldr::GraphId& edge_id,
             }
         }
 
-        if (open_exit_count != 1 || !open_exit_edge.Is_Valid()) {
-            break;
-        }
+        if (open_exit_count != 1 || !open_exit_edge.Is_Valid()) break;
 
         baldr::GraphId parent_inward = reader.GetOpposingEdgeId(open_exit_edge);
         if (!parent_inward.Is_Valid()) break;
 
         uint64_t parent_canon = get_canonical_edge_val(parent_inward, reader, true);
-        if (climbed.count(parent_canon)) break;
-
-        if (!is_closed_dead_end_subtree(parent_inward, reader)) {
-            break;
-        }
+        if (climbed.count(parent_canon) || !is_closed_dead_end_subtree(parent_inward, reader)) break;
 
         auto p_tile = reader.GetGraphTile(parent_inward);
         if (!p_tile) break;
@@ -465,11 +252,595 @@ SubtreeTrace climb_to_dead_end_root(const baldr::GraphId& edge_id,
     return trace;
 }
 
+// -----------------------------------------------------------------------------
+// Grouping Functions (2 Separate Functions)
+// -----------------------------------------------------------------------------
+
+struct RawPoint {
+    uint32_t original_index;
+    baldr::GraphId edge_id;
+    float percent_along;
+    float canonical_percent;
+    midgard::PointLL projected;
+};
+
+struct FinalPoint {
+    uint32_t original_index;
+    float sort_offset;
+    midgard::PointLL projected;
+};
+
+struct FinalGroup {
+    uint32_t group_id = 0;
+    int dead_end_side = 0;
+    std::vector<FinalPoint> points;
+    std::vector<baldr::GraphId> raw_edges;
+    std::vector<baldr::GraphId> anchor_nodes;
+};
+
+// GROUPING FUNCTION 1: Project and group strictly by canonical Edge ID
+std::unordered_map<uint64_t, std::vector<RawPoint>> group_points_by_edge(
+    const std::vector<baldr::Location>& locations,
+    const std::unordered_map<baldr::Location, baldr::PathLocation>& projections,
+    bool ignore_road_side,
+    baldr::GraphReader& reader) {
+
+    std::unordered_map<uint64_t, std::vector<RawPoint>> edge_groups;
+
+    for (size_t i = 0; i < locations.size(); ++i) {
+        auto it = projections.find(locations[i]);
+        if (it == projections.end() || it->second.edges.empty()) continue;
+
+        const auto& front_edge = it->second.edges.front();
+        baldr::GraphId edge_id = front_edge.id;
+        float percent = front_edge.percent_along;
+        auto projected = front_edge.projected;
+
+        uint64_t edge_key = edge_id.value;
+        float canon_percent = percent;
+
+        if (ignore_road_side) {
+            baldr::GraphId opposing_id = reader.GetOpposingEdgeId(edge_id);
+            if (opposing_id.Is_Valid() && opposing_id.value < edge_id.value) {
+                edge_key = opposing_id.value;
+                canon_percent = 1.0f - percent;
+            }
+        }
+
+        edge_groups[edge_key].push_back({
+            static_cast<uint32_t>(i),
+            edge_id,
+            percent,
+            canon_percent,
+            projected
+        });
+    }
+
+    return edge_groups;
+}
+
+// GROUPING FUNCTION 2: Merge edge groups that sit inside the same dead-end subtree
+std::vector<FinalGroup> merge_dead_end_edge_groups(
+    const std::unordered_map<uint64_t, std::vector<RawPoint>>& edge_groups,
+    baldr::GraphReader& reader) {
+
+    std::unordered_map<uint64_t, FinalGroup> merged_map;
+
+    for (const auto& [edge_key, raw_points] : edge_groups) {
+        baldr::GraphId sample_edge = raw_points.front().edge_id;
+        SubtreeTrace sample_trace = climb_to_dead_end_root(sample_edge, 0.0f, reader);
+
+        if (sample_trace.in_dead_end && sample_trace.root_inward_edge.Is_Valid()) {
+            uint64_t root_key = get_canonical_edge_val(sample_trace.root_inward_edge, reader, true);
+            auto& target_group = merged_map[root_key];
+            target_group.raw_edges.push_back(sample_trace.root_inward_edge);
+            target_group.raw_edges.push_back(sample_edge);
+
+            auto junction = edge_start_node(sample_trace.root_inward_edge, reader);
+            if (junction.Is_Valid()) target_group.anchor_nodes.push_back(junction);
+
+            bool climbed_multiple_edges =
+                get_canonical_edge_val(sample_trace.root_inward_edge, reader, true) !=
+                get_canonical_edge_val(sample_edge, reader, true);
+
+            if (climbed_multiple_edges || !target_group.points.empty()) {
+                target_group.dead_end_side = 2;
+            } else {
+                target_group.dead_end_side = sample_trace.local_dead_end_side;
+            }
+
+            for (const auto& rp : raw_points) {
+                SubtreeTrace pt_trace = climb_to_dead_end_root(rp.edge_id, rp.percent_along, reader);
+                float offset = pt_trace.in_dead_end ? pt_trace.dist_from_root : rp.canonical_percent;
+                target_group.points.push_back({rp.original_index, offset, rp.projected});
+            }
+        } else {
+            auto& target_group = merged_map[edge_key];
+            target_group.raw_edges.push_back(sample_edge);
+            auto a = edge_start_node(sample_edge, reader);
+            auto b = edge_end_node(sample_edge, reader);
+            if (a.Is_Valid()) target_group.anchor_nodes.push_back(a);
+            if (b.Is_Valid()) target_group.anchor_nodes.push_back(b);
+            for (const auto& rp : raw_points) {
+                target_group.points.push_back({rp.original_index, rp.canonical_percent, rp.projected});
+            }
+        }
+    }
+
+    std::vector<FinalGroup> result;
+    result.reserve(merged_map.size());
+    uint32_t idx = 0;
+
+    for (auto& [key, grp] : merged_map) {
+        std::sort(grp.points.begin(), grp.points.end(), [](const FinalPoint& a, const FinalPoint& b) {
+            return a.sort_offset < b.sort_offset;
+        });
+        grp.group_id = idx++;
+        result.push_back(std::move(grp));
+    }
+
+    return result;
+}
+
+// -----------------------------------------------------------------------------
+// Partitioning: region growing with exact boundary (choke) tracking
+// -----------------------------------------------------------------------------
+
+struct PartitionChokePoint {
+    midgard::PointLL point;
+    baldr::GraphId edge_id;   // outgoing edge (inside -> outside)
+    bool is_one_way = false;
+};
+
+PartitionChokePoint make_choke_point(const baldr::GraphId& edge_id, baldr::GraphReader& reader) {
+    PartitionChokePoint cp;
+    cp.edge_id = edge_id;
+    cp.is_one_way = !reader.GetOpposingEdgeId(edge_id).Is_Valid();
+
+    auto shape = get_edge_shape(edge_id, reader);
+    if (shape.empty()) return cp;
+    if (shape.size() == 1) { cp.point = shape.front(); return cp; }
+
+    // point at half the edge length
+    float total = 0.f;
+    for (size_t i = 1; i < shape.size(); ++i) total += shape[i - 1].Distance(shape[i]);
+    float target = total * 0.5f, walked = 0.f;
+    cp.point = shape.back();
+    for (size_t i = 1; i < shape.size(); ++i) {
+        float seg = shape[i - 1].Distance(shape[i]);
+        if (walked + seg >= target && seg > 0.f) {
+            float t = (target - walked) / seg;
+            cp.point = midgard::PointLL(
+                shape[i - 1].lng() + t * (shape[i].lng() - shape[i - 1].lng()),
+                shape[i - 1].lat() + t * (shape[i].lat() - shape[i - 1].lat()));
+            break;
+        }
+        walked += seg;
+    }
+    return cp;
+}
+
+struct CompletedPartition {
+    std::unordered_set<uint32_t> group_indices;
+    std::vector<PartitionChokePoint> chokes;
+    std::vector<std::vector<midgard::PointLL>> connected_lines;
+};
+
+// Node-level undirected graph view. A "node" is a cluster of Valhalla nodes
+// linked by hierarchy transitions, so highways (other level) stay connected.
+class RegionGraph {
+public:
+    // public member
+    struct Stats { size_t nodes=0, not_trav=0, forbidden=0, dead=0, self=0, kept=0; } stats;
+
+    struct Arc {
+        uint64_t canon;        // canonical undirected edge id
+        uint64_t to;           // neighbour node key
+        baldr::GraphId edge;   // outgoing directed edge
+        float secs;
+    };
+
+    RegionGraph(baldr::GraphReader& reader, const std::shared_ptr<sif::DynamicCost>& costing)
+    : reader_(reader), costing_(costing) {}
+
+    uint64_t key_of(const baldr::GraphId& nid) {
+        auto it = node_key_.find(nid.value);
+        if (it != node_key_.end()) return it->second;
+
+        std::vector<baldr::GraphId> cluster, stack{nid};
+        std::unordered_set<uint64_t> seen{nid.value};
+        while (!stack.empty()) {
+            baldr::GraphId n = stack.back();
+            stack.pop_back();
+            cluster.push_back(n);
+            auto t = reader_.GetGraphTile(n);
+            if (!t) continue;
+            const auto* ni = t->node(n);
+            if (!ni) continue;
+            for (uint32_t i = 0; i < ni->transition_count(); ++i) {
+                const auto* tr = t->transition(ni->transition_index() + i);
+                if (!tr) continue;
+                baldr::GraphId o = tr->endnode();
+                if (o.Is_Valid() && seen.insert(o.value).second) stack.push_back(o);
+            }
+        }
+        uint64_t key = nid.value;
+        for (const auto& n : cluster) key = std::min(key, n.value);
+        for (const auto& n : cluster) node_key_[n.value] = key;
+        members_[key] = cluster;
+        return key;
+    }
+
+    const std::vector<Arc>& arcs(uint64_t key) {
+        auto it = arcs_.find(key);
+        if (it != arcs_.end()) return it->second;
+
+        std::vector<Arc> out;
+        auto mit = members_.find(key);
+        if (mit != members_.end()) {
+            ++stats.nodes;
+
+            const auto members = mit->second;  // copy: key_of may touch members_
+            for (const auto& m : members) {
+                auto tile = reader_.GetGraphTile(m);
+                if (!tile) continue;
+                const auto* node = tile->node(m);
+                if (!node) continue;
+                for (uint32_t i = 0; i < node->edge_count(); ++i) {
+                    baldr::GraphId eid(m.tileid(), m.level(), node->edge_index() + i);
+                    const auto* de = tile->directededge(eid);
+                    if (!is_traversable_edge(de)) { ++stats.not_trav; continue; }
+
+                    if (!costing_->Allowed(de, tile)) {
+                        baldr::GraphId opp = reader_.GetOpposingEdgeId(eid);
+                        bool ok = false;
+                        if (opp.Is_Valid()) {
+                            auto ot = reader_.GetGraphTile(opp);
+                            ok = ot && costing_->Allowed(ot->directededge(opp), ot);
+                        }
+                        if (!ok) { ++stats.forbidden; continue; }
+                    }
+                    if (is_dead_end(eid)) { ++stats.dead; continue; }
+                    uint64_t to = key_of(de->endnode());
+                    if (to == key) { ++stats.self; continue; }
+                    ++stats.kept;
+                    float secs = std::max(0.1f, static_cast<float>(costing_->EdgeCost(de, tile).secs));
+                    out.push_back({get_canonical_edge_val(eid, reader_, true), to, eid, secs});
+                }
+            }
+        }
+        return arcs_.emplace(key, std::move(out)).first->second;
+    }
+
+private:
+    bool is_dead_end(const baldr::GraphId& eid) {
+        auto it = dead_end_.find(eid.value);
+        if (it != dead_end_.end()) return it->second;
+        bool r = is_closed_dead_end_subtree(eid, reader_);
+        dead_end_[eid.value] = r;
+        return r;
+    }
+
+    baldr::GraphReader& reader_;
+    std::shared_ptr<sif::DynamicCost> costing_;
+    std::unordered_map<uint64_t, uint64_t> node_key_;
+    std::unordered_map<uint64_t, std::vector<baldr::GraphId>> members_;
+    std::unordered_map<uint64_t, std::vector<Arc>> arcs_;
+    std::unordered_map<uint64_t, bool> dead_end_;
+};
+
+struct BoundaryArc {
+    baldr::GraphId edge;  // directed, leaving the region
+    uint64_t to;          // outside node
+};
+using Boundary = std::unordered_map<uint64_t, BoundaryArc>;  // canon edge -> arc
+
+Boundary boundary_of(const std::unordered_set<uint64_t>& nodes, RegionGraph& g) {
+    Boundary b;
+    for (uint64_t v : nodes)
+        for (const auto& a : g.arcs(v))
+            if (!nodes.count(a.to)) b[a.canon] = {a.edge, a.to};
+    return b;
+}
+
+struct PartitionLimits {
+    float  max_secs   = 900.f;  // isochrone radius around the seed group
+    size_t max_nodes  = 6000;   // hard cap on region size per growth
+    size_t max_groups = 60;     // a partition never holds more groups than this
+    size_t min_groups = 3;      // smaller partitions are not worth the overhead
+    size_t max_chokes = 3;      // a partition never has more entries/exits than this
+    float  delta_secs = 45.f;   // growth bias: cost of opening one extra boundary road
+};
+
+// One growth layer: the region after the first `nodes` insertions, its choke
+// count (= open roads to the rest of the world) and the groups it encloses.
+struct Layer {
+    size_t nodes;
+    size_t chokes;
+    size_t groups;
+};
+
+struct Candidate {
+    double score = 0.0;
+    uint32_t seed = 0;
+    size_t epoch = 0;
+    std::vector<uint64_t> nodes;  // region of the best layer, empty if none qualified
+};
+
+// Grows a region from a seed group, isochrone style, but biased towards nodes
+// that close boundary roads instead of opening new ones. Roads without a split
+// (degree <= 2 after dead ends are removed) are swallowed whole, so every
+// boundary road ends right before a split: that is where the choke sits.
+// Every insertion is a layer; the layer with the best groups/chokes ratio wins.
+class PartitionGrower {
+public:
+    PartitionGrower(RegionGraph& graph,
+                    const std::vector<std::vector<uint64_t>>& group_keys,
+                    const std::unordered_map<uint64_t, std::vector<uint32_t>>& groups_at,
+                    const std::unordered_map<uint64_t, uint32_t>& owner,
+                    const std::vector<int>& part_of,
+                    const PartitionLimits& lim)
+    : graph_(graph), group_keys_(group_keys), groups_at_(groups_at),
+      owner_(owner), part_of_(part_of), lim_(lim) {}
+
+    Candidate grow(uint32_t seed) {
+        reset();
+        for (uint64_t k : group_keys_[seed]) absorb(k, 0.f);
+        record();
+
+        while (!pq_.empty()) {
+            if (order_.size() >= lim_.max_nodes || groups_in_ > lim_.max_groups) break;
+            QE cur = pq_.top();
+            pq_.pop();
+            if (!open(cur.node) || ver_[cur.node] != cur.ver) continue;
+            absorb(cur.node, dist_[cur.node]);
+            record();
+        }
+
+        Candidate c;
+        c.seed = seed;
+        const Layer* best = nullptr;
+        for (const auto& l : layers_) {
+            if (l.chokes > lim_.max_chokes) continue;
+            if (l.groups < lim_.min_groups || l.groups > lim_.max_groups) continue;
+            // a fully closed region (0 chokes) is the best possible shape
+            double s = double(l.groups) / (l.chokes == 0 ? 0.5 : double(l.chokes));
+            if (!best || s > c.score) { best = &l; c.score = s; }
+        }
+        if (best) c.nodes.assign(order_.begin(), order_.begin() + best->nodes);
+        return c;
+    }
+
+private:
+    struct QE {
+        float prio; uint64_t node; uint32_t ver;
+        bool operator>(const QE& o) const { return prio > o.prio; }
+    };
+
+    void reset() {
+        in_.clear(); order_.clear(); dist_.clear(); ver_.clear();
+        hits_.clear(); boundary_.clear(); layers_.clear();
+        groups_in_ = 0;
+        pq_ = decltype(pq_)();
+    }
+
+    bool open(uint64_t k) const { return !in_.count(k) && !owner_.count(k); }
+
+    // boundary roads gained (+) or closed (-) by inserting k
+    int delta(uint64_t k) {
+        int d = 0;
+        for (const auto& a : graph_.arcs(k)) d += in_.count(a.to) ? -1 : 1;
+        return d;
+    }
+
+    void push(uint64_t k) {
+        float p = dist_[k] + lim_.delta_secs * static_cast<float>(delta(k));
+        pq_.push({p, k, ++ver_[k]});
+    }
+
+    void insert(uint64_t v) {
+        in_.insert(v);
+        order_.push_back(v);
+        for (const auto& a : graph_.arcs(v)) {
+            if (in_.count(a.to)) boundary_.erase(a.canon);  // road became interior
+            else boundary_.insert(a.canon);                 // road leads outside
+        }
+        auto it = groups_at_.find(v);
+        if (it == groups_at_.end()) return;
+        for (uint32_t g : it->second)
+            if (part_of_[g] < 0 && ++hits_[g] == group_keys_[g].size()) ++groups_in_;
+    }
+
+    // insert v, then follow every split-free road leaving it up to the next split
+    void absorb(uint64_t v, float d) {
+        std::vector<std::pair<uint64_t, float>> work{{v, d}};
+        while (!work.empty()) {
+            auto [x, dx] = work.back();
+            work.pop_back();
+            if (!open(x)) continue;
+            auto [xit, xfresh] = dist_.try_emplace(x, dx);
+            if (!xfresh) xit->second = std::min(xit->second, dx);
+            const float base = xit->second;
+            insert(x);
+
+            for (const auto& a : graph_.arcs(x)) {
+                if (!open(a.to)) continue;
+                float nd = base + a.secs;
+                if (nd <= lim_.max_secs) {
+                    auto [it, fresh] = dist_.try_emplace(a.to, nd);
+                    if (!fresh) it->second = std::min(it->second, nd);
+                }
+                auto it = dist_.find(a.to);
+                if (it == dist_.end()) continue;  // beyond the isochrone
+                if (graph_.arcs(a.to).size() <= 2 && order_.size() < lim_.max_nodes)
+                    work.push_back({a.to, it->second});
+                else
+                    push(a.to);  // a split (or cap): its delta changed, re-queue
+            }
+        }
+    }
+
+    void record() {
+        Layer l{order_.size(), boundary_.size(), groups_in_};
+        // identical counts on a bigger region add nothing, keep the smaller one
+        if (!layers_.empty() && layers_.back().chokes == l.chokes && layers_.back().groups == l.groups)
+            return;
+        layers_.push_back(l);
+    }
+
+    RegionGraph& graph_;
+    const std::vector<std::vector<uint64_t>>& group_keys_;
+    const std::unordered_map<uint64_t, std::vector<uint32_t>>& groups_at_;
+    const std::unordered_map<uint64_t, uint32_t>& owner_;
+    const std::vector<int>& part_of_;
+    const PartitionLimits& lim_;
+
+    std::unordered_set<uint64_t> in_;
+    std::vector<uint64_t> order_;
+    std::unordered_map<uint64_t, float> dist_;
+    std::unordered_map<uint64_t, uint32_t> ver_;
+    std::unordered_map<uint32_t, size_t> hits_;  // group -> anchors inside
+    std::unordered_set<uint64_t> boundary_;      // canon roads leaving the region
+    std::vector<Layer> layers_;
+    size_t groups_in_ = 0;
+    std::priority_queue<QE, std::vector<QE>, std::greater<QE>> pq_;
+};
+
+std::vector<CompletedPartition> compute_isochrone_partitions(
+    const std::vector<FinalGroup>& groups,
+    const std::shared_ptr<sif::DynamicCost>& costing,
+    baldr::GraphReader& reader) {
+
+    const uint32_t n = static_cast<uint32_t>(groups.size());
+    if (n == 0) return {};
+
+    const PartitionLimits lim;
+    RegionGraph graph(reader, costing);
+
+    // 1. the open-graph nodes each group hangs off; a group is inside a region
+    //    once all of them are
+    std::vector<std::vector<uint64_t>> group_keys(n);
+    std::unordered_map<uint64_t, std::vector<uint32_t>> groups_at;
+    for (uint32_t g = 0; g < n; ++g) {
+        auto& keys = group_keys[g];
+        for (const auto& a : groups[g].anchor_nodes)
+            if (a.Is_Valid()) keys.push_back(graph.key_of(a));
+        std::sort(keys.begin(), keys.end());
+        keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+        for (uint64_t k : keys) groups_at[k].push_back(g);
+    }
+
+    std::unordered_map<uint64_t, uint32_t> owner;  // node -> partition
+    std::vector<int> part_of(n, -1);               // group -> partition
+    std::vector<std::vector<uint64_t>> part_nodes;
+    PartitionGrower grower(graph, group_keys, groups_at, owner, part_of, lim);
+
+    // 2. one candidate per distinct seed, best ratio first
+    std::vector<Candidate> pool;
+    std::priority_queue<std::pair<double, size_t>> pq;
+    std::set<std::vector<uint64_t>> seen_seeds;
+    for (uint32_t g = 0; g < n; ++g) {
+        if (group_keys[g].empty() || !seen_seeds.insert(group_keys[g]).second) continue;
+        Candidate c = grower.grow(g);
+        if (c.nodes.empty()) continue;
+        pq.push({c.score, pool.size()});
+        pool.push_back(std::move(c));
+    }
+
+    // 3. lazy greedy commit; a candidate that overlaps a committed partition is
+    //    regrown against the current walls and re-queued
+    size_t epoch = 0;
+    while (!pq.empty()) {
+        size_t idx = pq.top().second;
+        pq.pop();
+        if (pool[idx].epoch != epoch) {
+            const auto& nodes = pool[idx].nodes;
+            bool overlap = std::any_of(nodes.begin(), nodes.end(),
+                                       [&](uint64_t k) { return owner.count(k) > 0; });
+            if (overlap) {
+                uint32_t seed = pool[idx].seed;
+                if (part_of[seed] >= 0) continue;
+                Candidate r = grower.grow(seed);
+                r.epoch = epoch;
+                if (r.nodes.empty()) continue;
+                pq.push({r.score, idx});
+                pool[idx] = std::move(r);
+                continue;
+            }
+        }
+
+        const uint32_t pid = static_cast<uint32_t>(part_nodes.size());
+        for (uint64_t k : pool[idx].nodes) owner[k] = pid;
+        for (uint64_t k : pool[idx].nodes) {
+            auto it = groups_at.find(k);
+            if (it == groups_at.end()) continue;
+            for (uint32_t g : it->second) {
+                if (part_of[g] >= 0) continue;
+                bool inside = std::all_of(group_keys[g].begin(), group_keys[g].end(), [&](uint64_t gk) {
+                    auto o = owner.find(gk);
+                    return o != owner.end() && o->second == pid;
+                });
+                if (inside) part_of[g] = static_cast<int>(pid);
+            }
+        }
+        part_nodes.push_back(std::move(pool[idx].nodes));
+        ++epoch;
+    }
+
+    // 4. a group sitting on a choke road itself joins the partition that owns
+    //    one end of that road
+    size_t leftover = 0;
+    for (uint32_t g = 0; g < n; ++g) {
+        if (part_of[g] >= 0) continue;
+        for (uint64_t k : group_keys[g]) {
+            auto o = owner.find(k);
+            if (o != owner.end()) { part_of[g] = static_cast<int>(o->second); break; }
+        }
+        if (part_of[g] < 0) ++leftover;
+    }
+
+    // 5. emit
+    std::vector<CompletedPartition> result(part_nodes.size());
+    for (uint32_t g = 0; g < n; ++g)
+        if (part_of[g] >= 0) result[part_of[g]].group_indices.insert(g);
+
+    for (uint32_t p = 0; p < part_nodes.size(); ++p) {
+        std::unordered_set<uint64_t> nodes(part_nodes[p].begin(), part_nodes[p].end());
+        for (const auto& [canon, arc] : boundary_of(nodes, graph))
+            result[p].chokes.push_back(make_choke_point(arc.edge, reader));
+
+        std::unordered_set<uint64_t> emitted;
+        for (uint64_t v : nodes) {
+            for (const auto& a : graph.arcs(v)) {
+                if (!nodes.count(a.to) || !emitted.insert(a.canon).second) continue;
+                auto shape = get_edge_shape(a.edge, reader);
+                if (shape.size() >= 2) result[p].connected_lines.push_back(std::move(shape));
+            }
+        }
+    }
+    for (uint32_t g = 0; g < n; ++g) {
+        if (part_of[g] < 0) continue;
+        for (const auto& eid : groups[g].raw_edges) {
+            auto shape = get_edge_shape(eid, reader);
+            if (shape.size() >= 2) result[part_of[g]].connected_lines.push_back(std::move(shape));
+        }
+    }
+
+    std::cerr << "groups=" << n << " partitions=" << result.size()
+              << " unpartitioned_groups=" << leftover << "\n";
+    for (size_t p = 0; p < result.size(); ++p)
+        std::cerr << "  partition " << p << ": groups=" << result[p].group_indices.size()
+                  << " chokes=" << result[p].chokes.size() << "\n";
+
+    return result;
+}
+
 } // namespace
 
-//
-// Action code.
-//
+// -----------------------------------------------------------------------------
+// Loki Worker Methods
+// -----------------------------------------------------------------------------
+
 void loki_worker_t::init_group_locations(Api& request) {
     auto& options = *request.mutable_options();
     parse_locations(options.mutable_locations(), request);
@@ -487,345 +858,38 @@ void loki_worker_t::group_locations(Api& request) {
     bool ignore_road_side = options.ignore_road_side();
 
     try {
-        auto locations = baldr::PathLocation::fromPBF(options.locations());
+        const auto locations = baldr::PathLocation::fromPBF(options.locations());
         const auto projections = loki::Search(locations, *reader, costing);
 
-        struct RawPoint {
-            uint32_t original_index;
-            baldr::GraphId edge_id;
-            float percent_along;
-            float canonical_percent;
-            midgard::PointLL projected;
-        };
+        // 1. Group strictly by canonical Edge ID
+        auto raw_edge_groups = group_points_by_edge(
+            locations, projections, ignore_road_side, *reader);
 
-        // -------------------------------------------------------------
-        // STAGE 1: Group strictly by Edge ID first (matches your 155-group baseline).
-        // -------------------------------------------------------------
-        std::unordered_map<uint64_t, std::vector<RawPoint>> edge_groups;
+        // 2. Merge edge groups belonging to the same dead-end subtree
+        auto final_groups = merge_dead_end_edge_groups(raw_edge_groups, *reader);
 
-        for (size_t i = 0; i < locations.size(); ++i) {
-            const auto& projection = projections.at(locations[i]);
-            if (projection.edges.empty())
-                continue;
+        // 3. Compute partitions sequentially via Isochrone Choke-Barrier Map
+        auto partitions = compute_isochrone_partitions(final_groups, costing, *reader);
 
-            baldr::GraphId edge_id = projection.edges.front().id;
-            float percent = projection.edges.front().percent_along;
-            auto projected = projection.edges.front().projected;
-
-            uint64_t edge_key = edge_id.value;
-            float canon_percent = percent;
-
-            if (ignore_road_side) {
-                baldr::GraphId opposing_id = reader->GetOpposingEdgeId(edge_id);
-                if (opposing_id.Is_Valid() && opposing_id.value < edge_id.value) {
-                    edge_key = opposing_id.value;
-                    canon_percent = 1.0f - percent;
-                }
-            }
-
-            edge_groups[edge_key].push_back({
-                static_cast<uint32_t>(i),
-                edge_id,
-                percent,
-                canon_percent,
-                projected
-            });
-        }
-
-        // -------------------------------------------------------------
-        // STAGE 2: Merge edge groups that belong to the same dead-end subtree.
-        // -------------------------------------------------------------
-        struct FinalPoint {
-            uint32_t original_index;
-            float sort_offset;
-            midgard::PointLL projected;
-        };
-
-        struct MergedGroup {
-            int dead_end_side = 0;
-            std::vector<FinalPoint> points;
-            std::vector<baldr::GraphId> raw_edges;
-        };
-
-        std::unordered_map<uint64_t, MergedGroup> final_groups;
-
-        for (auto& [edge_key, raw_points] : edge_groups) {
-            baldr::GraphId sample_edge = raw_points.front().edge_id;
-            SubtreeTrace sample_trace = climb_to_dead_end_root(sample_edge, 0.0f, *reader);
-
-            if (sample_trace.in_dead_end && sample_trace.root_inward_edge.Is_Valid()) {
-                uint64_t root_key = get_canonical_edge_val(sample_trace.root_inward_edge, *reader, true);
-                auto& target_group = final_groups[root_key];
-                target_group.raw_edges.push_back(sample_trace.root_inward_edge);
-                target_group.raw_edges.push_back(sample_edge);
-
-                bool climbed_multiple_edges =
-                    get_canonical_edge_val(sample_trace.root_inward_edge, *reader, true) !=
-                    get_canonical_edge_val(sample_edge, *reader, true);
-
-                if (climbed_multiple_edges || !target_group.points.empty()) {
-                    target_group.dead_end_side = 2;
-                } else {
-                    target_group.dead_end_side = sample_trace.local_dead_end_side;
-                }
-
-                for (const auto& rp : raw_points) {
-                    SubtreeTrace pt_trace = climb_to_dead_end_root(rp.edge_id, rp.percent_along, *reader);
-                    float offset = pt_trace.in_dead_end ? pt_trace.dist_from_root : rp.canonical_percent;
-                    target_group.points.push_back({rp.original_index, offset, rp.projected});
-                }
-            } else {
-                auto& target_group = final_groups[edge_key];
-                target_group.raw_edges.push_back(sample_edge);
-                for (const auto& rp : raw_points) {
-                    target_group.points.push_back({rp.original_index, rp.canonical_percent, rp.projected});
-                }
-            }
-        }
-
-        // -------------------------------------------------------------
-        // Serialize Group Results & Build Group Indexing
-        // -------------------------------------------------------------
+        // 4. Serialize results to Protobuf
         auto group_locations_res = request.mutable_group_locations();
         group_locations_res->clear_results();
 
-        std::vector<std::vector<baldr::GraphId>> group_raw_edges;
-        std::vector<midgard::PointLL> group_centroids;
-
-        uint32_t grp_idx = 0;
-        for (auto& [key, group] : final_groups) {
-            std::sort(group.points.begin(), group.points.end(), [](const FinalPoint& a, const FinalPoint& b) {
-                return a.sort_offset < b.sort_offset;
-            });
-
+        for (const auto& group : final_groups) {
             auto result = group_locations_res->add_results();
             if (group.dead_end_side != 0) {
                 result->set_dead_end_side(group.dead_end_side);
             }
-
-            float lat_sum = 0.0f, lng_sum = 0.0f;
             for (const auto& pt : group.points) {
                 result->add_location_index(pt.original_index);
                 auto snapped = result->add_locations();
                 snapped->set_location_index(pt.original_index);
                 snapped->mutable_snapped_point()->set_lat(pt.projected.lat());
                 snapped->mutable_snapped_point()->set_lng(pt.projected.lng());
-                lat_sum += pt.projected.lat();
-                lng_sum += pt.projected.lng();
-            }
-
-            float cnt = static_cast<float>(group.points.size());
-            group_centroids.push_back(midgard::PointLL(lng_sum / cnt, lat_sum / cnt));
-            group_raw_edges.push_back(group.raw_edges);
-            ++grp_idx;
-        }
-
-        // -------------------------------------------------------------
-        // STAGE 3: Multi-Source Road Voronoi Diagram & Graph Partitioning
-        // -------------------------------------------------------------
-        const uint32_t num_groups = static_cast<uint32_t>(group_raw_edges.size());
-
-        struct VoronoiState {
-            baldr::GraphId edge_id;
-            uint32_t owner_group;
-            float cost_secs;
-            bool operator>(const VoronoiState& o) const { return cost_secs > o.cost_secs; }
-        };
-
-        std::priority_queue<VoronoiState, std::vector<VoronoiState>, std::greater<VoronoiState>> v_pq;
-        std::unordered_map<uint64_t, float> canon_best_cost;
-        std::unordered_map<uint64_t, uint32_t> canon_owner;
-        std::unordered_map<uint64_t, baldr::GraphId> canon_rep_edge;
-        std::unordered_map<uint64_t, uint64_t> parent_canon;
-
-        // Seed all 157 groups simultaneously at cost 0.0
-        for (uint32_t g = 0; g < num_groups; ++g) {
-            for (const auto& eid : group_raw_edges[g]) {
-                if (!eid.Is_Valid()) continue;
-                uint64_t c = get_canonical_edge_val(eid, *reader, true);
-                canon_best_cost[c] = 0.0f;
-                canon_owner[c] = g;
-                canon_rep_edge[c] = eid;
-                parent_canon[c] = c;
-
-                v_pq.push({eid, g, 0.0f});
-                baldr::GraphId opp = reader->GetOpposingEdgeId(eid);
-                if (opp.Is_Valid()) {
-                    v_pq.push({opp, g, 0.0f});
-                }
             }
         }
 
-        // Adjacency between Voronoi cells: adj_bridges[g1][g2] = Set of canonical cut-edges where g1 meets g2
-        std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::unordered_set<uint64_t>>> adj_bridges;
-        std::unordered_map<uint32_t, std::unordered_map<uint32_t, float>> adj_min_cost;
-        // Store rich bridge metadata for collisions
-        std::unordered_map<uint32_t, std::unordered_map<uint32_t, std::vector<CollisionBridge>>> all_bridges;
-
-        const float MAX_VORONOI_SECS = 900.0f; // 15-minute ceiling
-
-        while (!v_pq.empty()) {
-            auto curr = v_pq.top();
-            v_pq.pop();
-
-            uint64_t curr_c = get_canonical_edge_val(curr.edge_id, *reader, true);
-            if (curr.cost_secs > canon_best_cost[curr_c]) continue;
-
-            auto tile = reader->GetGraphTile(curr.edge_id);
-            if (!tile) continue;
-            const auto* de = tile->directededge(curr.edge_id);
-            if (!is_traversable_edge(de)) continue;
-
-            baldr::GraphId end_nid = de->endnode();
-            auto nt = reader->GetGraphTile(end_nid);
-            if (!nt) continue;
-            const auto* node = nt->node(end_nid);
-            if (!node) continue;
-
-            baldr::GraphId opp_curr = reader->GetOpposingEdgeId(curr.edge_id);
-
-            for (uint32_t i = 0; i < node->edge_count(); ++i) {
-                baldr::GraphId next_id(end_nid.tileid(), end_nid.level(), node->edge_index() + i);
-                if (next_id == opp_curr) continue;
-
-                const auto* next_de = nt->directededge(next_id);
-                if (!is_traversable_edge(next_de)) continue;
-
-                // Ignore dead-end twigs that contain no groups so we NEVER place a choke point in a dead end!
-                if (is_closed_dead_end_subtree(next_id, *reader)) {
-                    uint64_t next_c_check = get_canonical_edge_val(next_id, *reader, true);
-                    if (canon_owner.find(next_c_check) == canon_owner.end()) {
-                        continue;
-                    }
-                }
-
-                uint64_t next_c = get_canonical_edge_val(next_id, *reader, true);
-                float step_secs = costing->EdgeCost(next_de, nt).secs;
-                float new_cost = curr.cost_secs + step_secs;
-                if (new_cost > MAX_VORONOI_SECS) continue;
-
-                auto o_it = canon_owner.find(next_c);
-                if (o_it == canon_owner.end()) {
-                    // Unclaimed road -> Claim for curr.owner_group
-                    canon_best_cost[next_c] = new_cost;
-                    canon_owner[next_c] = curr.owner_group;
-                    canon_rep_edge[next_c] = next_id;
-                    parent_canon[next_c] = curr_c;
-                    v_pq.push({next_id, curr.owner_group, new_cost});
-                } else if (o_it->second != curr.owner_group) {
-                    // COLLISION! Two different groups' Voronoi territories meet right at this edge!
-                    // This exact collision edge is the true bridge/choke point between Group A and Group B.
-                   uint32_t g_a = curr.owner_group;
-                    uint32_t g_b = o_it->second;
-                    float total_bridge_cost = curr.cost_secs + canon_best_cost[next_c];
-
-                    adj_bridges[g_a][g_b].insert(next_c);
-                    adj_bridges[g_b][g_a].insert(next_c);
-
-                    CollisionBridge br{curr_c, next_c, next_id};
-                    all_bridges[g_a][g_b].push_back(br);
-                    all_bridges[g_b][g_a].push_back(br);
-
-                    if (adj_min_cost[g_a].find(g_b) == adj_min_cost[g_a].end() ||
-                        total_bridge_cost < adj_min_cost[g_a][g_b]) {
-                        adj_min_cost[g_a][g_b] = total_bridge_cost;
-                        adj_min_cost[g_b][g_a] = total_bridge_cost;
-                    }
-                }
-            }
-        }
-
-        // Now every group is a node in the Voronoi Region-Adjacency Graph (`adj_bridges`).
-        // Expanding on `adj_bridges` guarantees 100% contiguous, non-overlapping regions!
-        std::unordered_set<uint32_t> locked_groups;
-        std::vector<CandidatePartition> finalized_partitions;
-
-        const size_t MIN_PART_GROUPS = 8;
-        const size_t MAX_PART_GROUPS = 22;
-
-        while (true) {
-            CandidatePartition best_cand;
-            best_cand.score = -1e9f;
-            bool found_any = false;
-
-            for (uint32_t seed = 0; seed < num_groups; ++seed) {
-                if (locked_groups.count(seed)) continue;
-
-                // Grow contiguous Voronoi cluster from `seed` picking closest adjacent Voronoi neighbors
-                std::unordered_set<uint32_t> cluster = {seed};
-
-                while (cluster.size() < MAX_PART_GROUPS) {
-                    // Find unassigned neighbor group with minimum travel time / strongest connection to cluster
-                    uint32_t best_next_grp = UINT32_MAX;
-                    float best_next_cost = 1e9f;
-
-                    for (uint32_t u : cluster) {
-                        for (const auto& [v, cost] : adj_min_cost[u]) {
-                            if (cluster.count(v) || locked_groups.count(v)) continue;
-                            // Also penalize Euclidean distance from seed so clusters stay round and never snake
-                            float geo_dist = group_centroids[seed].Distance(group_centroids[v]);
-                            if (geo_dist > 3500.0f) continue; // Hard 3.5 km cluster diameter limit
-
-                            float combined_metric = cost + (geo_dist * 0.05f);
-                            if (combined_metric < best_next_cost) {
-                                best_next_cost = combined_metric;
-                                best_next_grp = v;
-                            }
-                        }
-                    }
-
-                    if (best_next_grp == UINT32_MAX) break;
-                    cluster.insert(best_next_grp);
-
-                    if (cluster.size() >= MIN_PART_GROUPS) {
-                        // Compute exact choke points: all Voronoi boundary bridges connecting `cluster`
-                        // to ANY group OUTSIDE `cluster` (including locked groups!)
-                        std::unordered_set<uint64_t> active_cut_edges;
-                        bool touches_outside = false;
-
-                        for (uint32_t u : cluster) {
-                            for (const auto& [v, bridge_edges] : adj_bridges[u]) {
-                                if (!cluster.count(v)) {
-                                    touches_outside = true;
-                                    for (uint64_t be : bridge_edges) {
-                                        active_cut_edges.insert(be);
-                                    }
-                                }
-                            }
-                        }
-
-                        if (touches_outside && active_cut_edges.size() >= 1 && active_cut_edges.size() <= 4) {
-                            CandidatePartition cand;
-                            cand.group_indices = cluster;
-                            for (uint64_t ce : active_cut_edges) {
-                                baldr::GraphId rep = canon_rep_edge.count(ce) ? canon_rep_edge[ce] : baldr::GraphId(ce);
-                                cand.chokes.push_back(make_choke_point(rep, *reader));
-                            }
-
-                            float n_g = static_cast<float>(cluster.size());
-                            float n_c = static_cast<float>(cand.chokes.size());
-                            // Strongly prefer 1 or 2 choke points and ~16-20 groups
-                            cand.score = (n_g * n_g * 100.0f) / (n_c * n_c * n_c)
-                                         - std::abs(n_g - 18.0f) * 5.0f;
-
-                            if (cand.score > best_cand.score) {
-                                best_cand = std::move(cand);
-                                found_any = true;
-                            }
-                        }
-                    }
-                }
-            }
-
-            if (!found_any) break;
-
-            for (uint32_t gid : best_cand.group_indices) {
-                locked_groups.insert(gid);
-            }
-            finalized_partitions.push_back(std::move(best_cand));
-        }
-
-        for (const auto& partition : finalized_partitions) {
+        for (const auto& partition : partitions) {
             auto part_pb = group_locations_res->add_partitions();
             for (uint32_t gid : partition.group_indices) {
                 part_pb->add_group_indices(gid);
@@ -837,35 +901,7 @@ void loki_worker_t::group_locations(Api& request) {
                 cp_pb->set_edge_id(choke.edge_id.value);
                 cp_pb->set_is_one_way(choke.is_one_way);
             }
-
-            // Gather all relevant bridges:
-            // 1. Bridges between groups INSIDE this partition (connects all internal groups)
-            // 2. Bridges leaving this partition (connects internal groups to external choke points)
-            std::vector<CollisionBridge> partition_bridges;
-            for (uint32_t u : partition.group_indices) {
-                for (const auto& [v, bridges] : all_bridges[u]) {
-                    // Internal connections (avoid double counting with u < v)
-                    if (partition.group_indices.count(v)) {
-                        if (u < v) {
-                            partition_bridges.insert(partition_bridges.end(), bridges.begin(), bridges.end());
-                        }
-                    } else {
-                        // External connections to outside choke points
-                        partition_bridges.insert(partition_bridges.end(), bridges.begin(), bridges.end());
-                    }
-                }
-            }
-
-            auto lines = build_partition_connected_subgraph(
-                partition.group_indices,
-                group_raw_edges,
-                partition_bridges,
-                parent_canon,
-                canon_rep_edge,
-                canon_owner,
-                *reader);
-
-            for (const auto& seg : lines) {
+            for (const auto& seg : partition.connected_lines) {
                 auto line_pb = part_pb->add_boundary_lines();
                 for (const auto& pt : seg) {
                     auto p_pb = line_pb->add_points();
