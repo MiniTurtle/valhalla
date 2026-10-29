@@ -420,8 +420,9 @@ std::vector<midgard::PointLL> cut_shape(const std::vector<midgard::PointLL>& sha
     return out;
 }
 
-// metres along `shape` to the spot closest to p
-float distance_along(const std::vector<midgard::PointLL>& shape, const midgard::PointLL& p) {
+// spot on `shape` closest to p: {metres along the shape, metres away from p}
+std::pair<float, float> closest_on_shape(const std::vector<midgard::PointLL>& shape,
+                                         const midgard::PointLL& p) {
     float best = std::numeric_limits<float>::max(), along = 0.f, walked = 0.f;
     for (size_t i = 1; i < shape.size(); ++i) {
         const auto& a = shape[i - 1];
@@ -437,25 +438,86 @@ float distance_along(const std::vector<midgard::PointLL>& shape, const midgard::
         if (d < best) { best = d; along = walked + static_cast<float>(t) * seg; }
         walked += seg;
     }
-    return along;
+    if (shape.size() == 1) best = shape.front().Distance(p);
+    return {along, best};
 }
 
-// Choke on the edge leaving the partition, `offset_m` past its inner end: as
-// close to the partition as possible while clearly on this road and not on the
-// split behind it.
+// metres along `shape` to the spot closest to p
+float distance_along(const std::vector<midgard::PointLL>& shape, const midgard::PointLL& p) {
+    return closest_on_shape(shape, p).first;
+}
+
+// shapes of every other road touching either end of the edge (across hierarchy
+// levels): these are what a snap of the choke point could wrongly land on
+std::vector<std::vector<midgard::PointLL>> neighbour_shapes(const baldr::GraphId& edge_id,
+                                                            baldr::GraphReader& reader) {
+    const baldr::GraphId opp = reader.GetOpposingEdgeId(edge_id);
+    std::vector<baldr::GraphId> nodes{edge_start_node(edge_id, reader), edge_end_node(edge_id, reader)};
+    std::unordered_set<uint64_t> seen;
+    std::vector<std::vector<midgard::PointLL>> out;
+    for (size_t n = 0; n < nodes.size(); ++n) {
+        const baldr::GraphId nid = nodes[n];
+        if (!nid.Is_Valid() || !seen.insert(nid.value).second) continue;
+        auto tile = reader.GetGraphTile(nid);
+        const auto* node = tile ? tile->node(nid) : nullptr;
+        if (!node) continue;
+        for (uint32_t i = 0; i < node->transition_count(); ++i) {
+            const auto* tr = tile->transition(node->transition_index() + i);
+            if (tr) nodes.push_back(tr->endnode());
+        }
+        for (uint32_t i = 0; i < node->edge_count(); ++i) {
+            baldr::GraphId eid(nid.tileid(), nid.level(), node->edge_index() + i);
+            if (eid == edge_id || eid == opp || !is_traversable_edge(tile->directededge(eid))) continue;
+            auto shape = get_edge_shape(eid, reader);
+            if (!shape.empty()) out.push_back(std::move(shape));
+        }
+    }
+    return out;
+}
+
+// Choke on the edge leaving the partition: the spot closest to the partition,
+// but at least `offset_m` along the edge, that is `clear_m` away from every
+// other road at either end, so snapping to it can only land on this road.
+// Short edges with no such spot get the point with the most clearance.
 PartitionChokePoint make_choke_point(const baldr::GraphId& edge_id,
                                      baldr::GraphReader& reader,
+                                     const std::shared_ptr<sif::DynamicCost>& costing,
                                      float offset_m = 10.f) {
+    const float CLEAR_M = 15.f;
+    const float STEP_M = 2.f;
+
     PartitionChokePoint cp;
     cp.edge_id = edge_id;
-    cp.is_one_way = !reader.GetOpposingEdgeId(edge_id).Is_Valid();
+
+    // one way = drivable in only one of the two directions for this costing
+    auto allowed = [&](const baldr::GraphId& eid) {
+        if (!eid.Is_Valid()) return false;
+        auto tile = reader.GetGraphTile(eid);
+        const auto* de = tile ? tile->directededge(eid) : nullptr;
+        return de && costing->Allowed(de, tile);
+    };
+    cp.is_one_way = allowed(edge_id) != allowed(reader.GetOpposingEdgeId(edge_id));
 
     auto shape = get_edge_shape(edge_id, reader);
     if (shape.empty()) return cp;
     if (shape.size() == 1) { cp.point = shape.front(); return cp; }
 
     const float total = shape_length(shape);
-    cp.point = cut_shape(shape, std::min(offset_m, total)).back();
+    const auto others = neighbour_shapes(edge_id, reader);
+    auto clearance = [&](const midgard::PointLL& p) {
+        float c = std::numeric_limits<float>::max();
+        for (const auto& o : others) c = std::min(c, closest_on_shape(o, p).second);
+        return c;
+    };
+
+    const float start = std::min(offset_m, total * 0.5f);
+    float best_at = start, best_clear = -1.f;
+    for (float at = start; at <= total; at += STEP_M) {
+        const float c = clearance(cut_shape(shape, at).back());
+        if (c >= CLEAR_M) { best_at = at; break; }
+        if (c > best_clear) { best_clear = c; best_at = at; }
+    }
+    cp.point = cut_shape(shape, best_at).back();
     return cp;
 }
 
@@ -982,7 +1044,7 @@ std::vector<CompletedPartition> compute_isochrone_partitions(
                 auto part = cut_shape(shape, offset);
                 if (part.size() >= 2) result[p].connected_lines.push_back(std::move(part));
             }
-            result[p].chokes.push_back(make_choke_point(arc.edge, reader, offset));
+            result[p].chokes.push_back(make_choke_point(arc.edge, reader, costing, offset));
         }
 
         for (uint64_t v : nodes) {
