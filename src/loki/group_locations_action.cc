@@ -22,6 +22,7 @@
 #include <cstdint>
 #include <functional>
 #include <iostream>
+#include <limits>
 
 namespace valhalla {
 namespace loki {
@@ -73,7 +74,9 @@ std::vector<midgard::PointLL> get_edge_shape(const baldr::GraphId& edge_id, bald
     if (!tile) return {};
     const auto* de = tile->directededge(edge_id);
     if (!de) return {};
-    return tile->edgeinfo(de).shape();
+    auto shape = tile->edgeinfo(de).shape();
+    if (!de->forward()) std::reverse(shape.begin(), shape.end());  // start node first
+    return shape;
 }
 
 // -----------------------------------------------------------------------------
@@ -392,7 +395,57 @@ struct PartitionChokePoint {
     bool is_one_way = false;
 };
 
-PartitionChokePoint make_choke_point(const baldr::GraphId& edge_id, baldr::GraphReader& reader) {
+float shape_length(const std::vector<midgard::PointLL>& shape) {
+    float total = 0.f;
+    for (size_t i = 1; i < shape.size(); ++i) total += shape[i - 1].Distance(shape[i]);
+    return total;
+}
+
+// shape from its start up to `dist` metres along it (last point interpolated)
+std::vector<midgard::PointLL> cut_shape(const std::vector<midgard::PointLL>& shape, float dist) {
+    if (shape.size() < 2) return shape;
+    std::vector<midgard::PointLL> out{shape.front()};
+    float walked = 0.f;
+    for (size_t i = 1; i < shape.size(); ++i) {
+        float seg = shape[i - 1].Distance(shape[i]);
+        if (walked + seg >= dist && seg > 0.f) {
+            float t = (dist - walked) / seg;
+            out.emplace_back(shape[i - 1].lng() + t * (shape[i].lng() - shape[i - 1].lng()),
+                             shape[i - 1].lat() + t * (shape[i].lat() - shape[i - 1].lat()));
+            return out;
+        }
+        walked += seg;
+        out.push_back(shape[i]);
+    }
+    return out;
+}
+
+// metres along `shape` to the spot closest to p
+float distance_along(const std::vector<midgard::PointLL>& shape, const midgard::PointLL& p) {
+    float best = std::numeric_limits<float>::max(), along = 0.f, walked = 0.f;
+    for (size_t i = 1; i < shape.size(); ++i) {
+        const auto& a = shape[i - 1];
+        const auto& b = shape[i];
+        const double cl = std::cos(a.lat() * 3.14159265358979323846 / 180.0);
+        const double dx = (b.lng() - a.lng()) * cl, dy = b.lat() - a.lat();
+        const double px = (p.lng() - a.lng()) * cl, py = p.lat() - a.lat();
+        const double len2 = dx * dx + dy * dy;
+        const double t = len2 > 0.0 ? std::clamp((px * dx + py * dy) / len2, 0.0, 1.0) : 0.0;
+        midgard::PointLL q(a.lng() + t * (b.lng() - a.lng()), a.lat() + t * (b.lat() - a.lat()));
+        const float seg = a.Distance(b);
+        const float d = q.Distance(p);
+        if (d < best) { best = d; along = walked + static_cast<float>(t) * seg; }
+        walked += seg;
+    }
+    return along;
+}
+
+// Choke on the edge leaving the partition, `offset_m` past its inner end: as
+// close to the partition as possible while clearly on this road and not on the
+// split behind it.
+PartitionChokePoint make_choke_point(const baldr::GraphId& edge_id,
+                                     baldr::GraphReader& reader,
+                                     float offset_m = 10.f) {
     PartitionChokePoint cp;
     cp.edge_id = edge_id;
     cp.is_one_way = !reader.GetOpposingEdgeId(edge_id).Is_Valid();
@@ -401,22 +454,8 @@ PartitionChokePoint make_choke_point(const baldr::GraphId& edge_id, baldr::Graph
     if (shape.empty()) return cp;
     if (shape.size() == 1) { cp.point = shape.front(); return cp; }
 
-    // point at half the edge length
-    float total = 0.f;
-    for (size_t i = 1; i < shape.size(); ++i) total += shape[i - 1].Distance(shape[i]);
-    float target = total * 0.5f, walked = 0.f;
-    cp.point = shape.back();
-    for (size_t i = 1; i < shape.size(); ++i) {
-        float seg = shape[i - 1].Distance(shape[i]);
-        if (walked + seg >= target && seg > 0.f) {
-            float t = (target - walked) / seg;
-            cp.point = midgard::PointLL(
-                shape[i - 1].lng() + t * (shape[i].lng() - shape[i - 1].lng()),
-                shape[i - 1].lat() + t * (shape[i].lat() - shape[i - 1].lat()));
-            break;
-        }
-        walked += seg;
-    }
+    const float total = shape_length(shape);
+    cp.point = cut_shape(shape, std::min(offset_m, total)).back();
     return cp;
 }
 
@@ -476,6 +515,7 @@ public:
         if (it != arcs_.end()) return it->second;
 
         std::vector<Arc> out;
+        std::vector<baldr::GraphId> dead;
         auto mit = members_.find(key);
         if (mit != members_.end()) {
             ++stats.nodes;
@@ -500,7 +540,7 @@ public:
                         }
                         if (!ok) { ++stats.forbidden; continue; }
                     }
-                    if (is_dead_end(eid)) { ++stats.dead; continue; }
+                    if (is_dead_end(eid)) { ++stats.dead; dead.push_back(eid); continue; }
                     uint64_t to = key_of(de->endnode());
                     if (to == key) { ++stats.self; continue; }
                     ++stats.kept;
@@ -509,7 +549,14 @@ public:
                 }
             }
         }
+        dead_arcs_.emplace(key, std::move(dead));
         return arcs_.emplace(key, std::move(out)).first->second;
+    }
+
+    // usable edges leaving `key` into a closed dead-end branch (not in arcs())
+    const std::vector<baldr::GraphId>& dead_ends(uint64_t key) {
+        arcs(key);
+        return dead_arcs_[key];
     }
 
 private:
@@ -526,6 +573,7 @@ private:
     std::unordered_map<uint64_t, uint64_t> node_key_;
     std::unordered_map<uint64_t, std::vector<baldr::GraphId>> members_;
     std::unordered_map<uint64_t, std::vector<Arc>> arcs_;
+    std::unordered_map<uint64_t, std::vector<baldr::GraphId>> dead_arcs_;
     std::unordered_map<uint64_t, bool> dead_end_;
 };
 
@@ -543,12 +591,59 @@ Boundary boundary_of(const std::unordered_set<uint64_t>& nodes, RegionGraph& g) 
     return b;
 }
 
+// true if every region neighbour of v still reaches the others once v is gone
+bool stays_connected(const std::unordered_set<uint64_t>& region, uint64_t v, RegionGraph& g) {
+    std::vector<uint64_t> nbrs;
+    for (const auto& a : g.arcs(v))
+        if (region.count(a.to)) nbrs.push_back(a.to);
+    if (nbrs.size() < 2) return true;
+
+    std::unordered_set<uint64_t> seen{v, nbrs.front()};
+    std::vector<uint64_t> stack{nbrs.front()};
+    while (!stack.empty()) {
+        uint64_t x = stack.back();
+        stack.pop_back();
+        for (const auto& a : g.arcs(x))
+            if (region.count(a.to) && seen.insert(a.to).second) stack.push_back(a.to);
+    }
+    return std::all_of(nbrs.begin(), nbrs.end(), [&](uint64_t k) { return seen.count(k) > 0; });
+}
+
+// Shrinks a region without losing any of its groups (`keep` = their anchors):
+//  - drops nodes that open more roads than they close (a split right behind
+//    the boundary, e.g. roundabout flares: 2 chokes become 1 before the split)
+//  - slides chokes inward along split-free roads, so they end up as close to
+//    the groups as possible without crossing a split
+void peel_region(std::unordered_set<uint64_t>& region,
+                 const std::unordered_set<uint64_t>& keep,
+                 RegionGraph& g) {
+    std::vector<uint64_t> work(region.begin(), region.end());
+    std::unordered_set<uint64_t> queued(region.begin(), region.end());
+    while (!work.empty()) {
+        uint64_t v = work.back();
+        work.pop_back();
+        queued.erase(v);
+        if (!region.count(v) || keep.count(v)) continue;
+
+        size_t in = 0, out = 0;
+        for (const auto& a : g.arcs(v)) ++(region.count(a.to) ? in : out);
+        const bool fewer_chokes = in < out;
+        const bool slide = in == 1 && out == 1;
+        if (!fewer_chokes && !slide) continue;
+        if (in >= 2 && !stays_connected(region, v, g)) continue;
+
+        region.erase(v);
+        for (const auto& a : g.arcs(v))
+            if (region.count(a.to) && queued.insert(a.to).second) work.push_back(a.to);
+    }
+}
+
 struct PartitionLimits {
     float  max_secs   = 900.f;  // isochrone radius around the seed group
     size_t max_nodes  = 6000;   // hard cap on region size per growth
     size_t max_groups = 60;     // a partition never holds more groups than this
     size_t min_groups = 3;      // smaller partitions are not worth the overhead
-    size_t max_chokes = 3;      // a partition never has more entries/exits than this
+    size_t max_chokes = 10;     // sanity cap only; the groups/chokes ratio decides
     float  delta_secs = 45.f;   // growth bias: cost of opening one extra boundary road
 };
 
@@ -607,7 +702,27 @@ public:
             double s = double(l.groups) / (l.chokes == 0 ? 0.5 : double(l.chokes));
             if (!best || s > c.score) { best = &l; c.score = s; }
         }
-        if (best) c.nodes.assign(order_.begin(), order_.begin() + best->nodes);
+        if (!best) return c;
+
+        // shrink the chosen layer to its groups, then rescore with the real chokes
+        std::unordered_set<uint64_t> region(order_.begin(), order_.begin() + best->nodes);
+        std::unordered_set<uint64_t> keep;
+        std::unordered_set<uint32_t> inside;
+        for (uint64_t k : region) {
+            auto it = groups_at_.find(k);
+            if (it == groups_at_.end()) continue;
+            for (uint32_t g : it->second) {
+                if (part_of_[g] >= 0) continue;
+                const auto& keys = group_keys_[g];
+                if (!std::all_of(keys.begin(), keys.end(), [&](uint64_t gk) { return region.count(gk) > 0; }))
+                    continue;
+                if (inside.insert(g).second) keep.insert(keys.begin(), keys.end());
+            }
+        }
+        peel_region(region, keep, graph_);
+        const size_t chokes = boundary_of(region, graph_).size();
+        c.score = double(inside.size()) / (chokes == 0 ? 0.5 : double(chokes));
+        c.nodes.assign(region.begin(), region.end());
         return c;
     }
 
@@ -804,30 +919,97 @@ std::vector<CompletedPartition> compute_isochrone_partitions(
     for (uint32_t g = 0; g < n; ++g)
         if (part_of[g] >= 0) result[part_of[g]].group_indices.insert(g);
 
-    for (uint32_t p = 0; p < part_nodes.size(); ++p) {
-        std::unordered_set<uint64_t> nodes(part_nodes[p].begin(), part_nodes[p].end());
-        for (const auto& [canon, arc] : boundary_of(nodes, graph))
-            result[p].chokes.push_back(make_choke_point(arc.edge, reader));
+    std::vector<std::unordered_set<uint64_t>> emitted(part_nodes.size());
+    auto draw = [&](uint32_t p, const baldr::GraphId& eid) {
+        if (!emitted[p].insert(get_canonical_edge_val(eid, reader, true)).second) return;
+        auto shape = get_edge_shape(eid, reader);
+        if (shape.size() >= 2) result[p].connected_lines.push_back(std::move(shape));
+    };
 
-        std::unordered_set<uint64_t> emitted;
-        for (uint64_t v : nodes) {
-            for (const auto& a : graph.arcs(v)) {
-                if (!nodes.count(a.to) || !emitted.insert(a.canon).second) continue;
-                auto shape = get_edge_shape(a.edge, reader);
-                if (shape.size() >= 2) result[p].connected_lines.push_back(std::move(shape));
+    // a closed dead-end branch, entered through `root`
+    auto draw_branch = [&](uint32_t p, const baldr::GraphId& root) {
+        std::vector<baldr::GraphId> stack{root};
+        for (size_t guard = 0; !stack.empty() && guard < 64; ++guard) {
+            baldr::GraphId e = stack.back();
+            stack.pop_back();
+            if (emitted[p].count(get_canonical_edge_val(e, reader, true))) continue;
+            draw(p, e);
+            auto tile = reader.GetGraphTile(e);
+            const auto* de = tile ? tile->directededge(e) : nullptr;
+            if (!de) continue;
+            baldr::GraphId end = de->endnode();
+            auto end_tile = reader.GetGraphTile(end);
+            const auto* node = end_tile ? end_tile->node(end) : nullptr;
+            if (!node) continue;
+            baldr::GraphId back = reader.GetOpposingEdgeId(e);
+            for (uint32_t i = 0; i < node->edge_count(); ++i) {
+                baldr::GraphId next(end.tileid(), end.level(), node->edge_index() + i);
+                if (next != back && is_traversable_edge(end_tile->directededge(next)))
+                    stack.push_back(next);
             }
         }
+    };
+
+    // groups on an open road, by that road
+    std::unordered_map<uint64_t, std::vector<uint32_t>> groups_on_edge;
+    for (uint32_t g = 0; g < n; ++g)
+        if (part_of[g] >= 0 && groups[g].dead_end_side == 0 && !groups[g].raw_edges.empty())
+            groups_on_edge[get_canonical_edge_val(groups[g].raw_edges.front(), reader, true)].push_back(g);
+
+    const float CHOKE_OFFSET_M = 10.f;
+    for (uint32_t p = 0; p < part_nodes.size(); ++p) {
+        std::unordered_set<uint64_t> nodes(part_nodes[p].begin(), part_nodes[p].end());
+
+        // chokes; a choke road that carries this partition's own points gets its
+        // choke just past the farthest of them, and is drawn only up to the choke
+        for (const auto& [canon, arc] : boundary_of(nodes, graph)) {
+            float offset = CHOKE_OFFSET_M;
+            bool carries = false;
+            std::vector<midgard::PointLL> shape;
+            auto it = groups_on_edge.find(canon);
+            if (it != groups_on_edge.end()) {
+                for (uint32_t g : it->second) {
+                    if (part_of[g] != static_cast<int>(p)) continue;
+                    if (!carries) { shape = get_edge_shape(arc.edge, reader); carries = true; }
+                    for (const auto& pt : groups[g].points)
+                        offset = std::max(offset, distance_along(shape, pt.projected) + CHOKE_OFFSET_M);
+                }
+            }
+            if (carries) {
+                const float total = shape_length(shape);
+                if (total > 2.f) offset = std::min(offset, total - 1.f);
+                emitted[p].insert(canon);
+                auto part = cut_shape(shape, offset);
+                if (part.size() >= 2) result[p].connected_lines.push_back(std::move(part));
+            }
+            result[p].chokes.push_back(make_choke_point(arc.edge, reader, offset));
+        }
+
+        for (uint64_t v : nodes) {
+            for (const auto& a : graph.arcs(v))
+                if (nodes.count(a.to)) draw(p, a.edge);
+            // dead ends hanging off the partition belong to it
+            for (const auto& eid : graph.dead_ends(v)) draw_branch(p, eid);
+        }
     }
+
+    // a group's own roads (normally already drawn above)
     for (uint32_t g = 0; g < n; ++g) {
         if (part_of[g] < 0) continue;
+        const uint32_t p = static_cast<uint32_t>(part_of[g]);
         for (const auto& eid : groups[g].raw_edges) {
-            auto shape = get_edge_shape(eid, reader);
-            if (shape.size() >= 2) result[part_of[g]].connected_lines.push_back(std::move(shape));
+            if (is_closed_dead_end_subtree(eid, reader)) { draw_branch(p, eid); continue; }
+            baldr::GraphId opp = reader.GetOpposingEdgeId(eid);
+            if (opp.Is_Valid() && is_closed_dead_end_subtree(opp, reader)) draw_branch(p, opp);
+            else draw(p, eid);
         }
     }
 
     std::cerr << "groups=" << n << " partitions=" << result.size()
-              << " unpartitioned_groups=" << leftover << "\n";
+              << " unpartitioned_groups=" << leftover << " ids:";
+    for (uint32_t g = 0; g < n; ++g)
+        if (part_of[g] < 0) std::cerr << " " << g;
+    std::cerr << "\n";
     for (size_t p = 0; p < result.size(); ++p)
         std::cerr << "  partition " << p << ": groups=" << result[p].group_indices.size()
                   << " chokes=" << result[p].chokes.size() << "\n";
