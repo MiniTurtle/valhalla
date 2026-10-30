@@ -1067,15 +1067,6 @@ std::vector<CompletedPartition> compute_isochrone_partitions(
         }
     }
 
-    std::cerr << "groups=" << n << " partitions=" << result.size()
-              << " unpartitioned_groups=" << leftover << " ids:";
-    for (uint32_t g = 0; g < n; ++g)
-        if (part_of[g] < 0) std::cerr << " " << g;
-    std::cerr << "\n";
-    for (size_t p = 0; p < result.size(); ++p)
-        std::cerr << "  partition " << p << ": groups=" << result[p].group_indices.size()
-                  << " chokes=" << result[p].chokes.size() << "\n";
-
     return result;
 }
 
