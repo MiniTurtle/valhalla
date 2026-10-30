@@ -706,18 +706,20 @@ void peel_region(std::unordered_set<uint64_t>& region,
 struct PartitionLimits {
     float  max_secs   = 900.f;  // isochrone radius around the seed group
     size_t max_nodes  = 6000;   // hard cap on region size per growth
-    size_t max_groups = 60;     // a partition never holds more groups than this
+    size_t max_endpoints = 40;  // route points a partition holds at most, the exact solve can blow up from ~45 on
     size_t min_groups = 3;      // smaller partitions are not worth the overhead
     size_t max_chokes = 10;     // sanity cap only; the groups/chokes ratio decides
     float  delta_secs = 45.f;   // growth bias: cost of opening one extra boundary road
 };
 
 // One growth layer: the region after the first `nodes` insertions, its choke
-// count (= open roads to the rest of the world) and the groups it encloses.
+// count (= open roads to the rest of the world), the groups it encloses and
+// their route points.
 struct Layer {
     size_t nodes;
     size_t chokes;
     size_t groups;
+    size_t endpoints;
 };
 
 struct Candidate {
@@ -739,9 +741,10 @@ public:
                     const std::unordered_map<uint64_t, std::vector<uint32_t>>& groups_at,
                     const std::unordered_map<uint64_t, uint32_t>& owner,
                     const std::vector<int>& part_of,
+                    const std::vector<uint32_t>& group_endpoints,
                     const PartitionLimits& lim)
     : graph_(graph), group_keys_(group_keys), groups_at_(groups_at),
-      owner_(owner), part_of_(part_of), lim_(lim) {}
+      owner_(owner), part_of_(part_of), group_endpoints_(group_endpoints), lim_(lim) {}
 
     Candidate grow(uint32_t seed) {
         reset();
@@ -749,7 +752,7 @@ public:
         record();
 
         while (!pq_.empty()) {
-            if (order_.size() >= lim_.max_nodes || groups_in_ > lim_.max_groups) break;
+            if (order_.size() >= lim_.max_nodes || endpoints_in_ > lim_.max_endpoints) break;
             QE cur = pq_.top();
             pq_.pop();
             if (!open(cur.node) || ver_[cur.node] != cur.ver) continue;
@@ -762,7 +765,7 @@ public:
         const Layer* best = nullptr;
         for (const auto& l : layers_) {
             if (l.chokes > lim_.max_chokes) continue;
-            if (l.groups < lim_.min_groups || l.groups > lim_.max_groups) continue;
+            if (l.groups < lim_.min_groups || l.endpoints > lim_.max_endpoints) continue;
             // a fully closed region (0 chokes) is the best possible shape
             double s = double(l.groups) / (l.chokes == 0 ? 0.5 : double(l.chokes));
             if (!best || s > c.score) { best = &l; c.score = s; }
@@ -801,6 +804,7 @@ private:
         in_.clear(); order_.clear(); dist_.clear(); ver_.clear();
         hits_.clear(); boundary_.clear(); layers_.clear();
         groups_in_ = 0;
+        endpoints_in_ = 0;
         pq_ = decltype(pq_)();
     }
 
@@ -828,7 +832,10 @@ private:
         auto it = groups_at_.find(v);
         if (it == groups_at_.end()) return;
         for (uint32_t g : it->second)
-            if (part_of_[g] < 0 && ++hits_[g] == group_keys_[g].size()) ++groups_in_;
+            if (part_of_[g] < 0 && ++hits_[g] == group_keys_[g].size()) {
+                ++groups_in_;
+                endpoints_in_ += group_endpoints_[g];
+            }
     }
 
     // insert v, then follow every split-free road leaving it up to the next split
@@ -861,7 +868,7 @@ private:
     }
 
     void record() {
-        Layer l{order_.size(), boundary_.size(), groups_in_};
+        Layer l{order_.size(), boundary_.size(), groups_in_, endpoints_in_};
         // identical counts on a bigger region add nothing, keep the smaller one
         if (!layers_.empty() && layers_.back().chokes == l.chokes && layers_.back().groups == l.groups)
             return;
@@ -873,6 +880,7 @@ private:
     const std::unordered_map<uint64_t, std::vector<uint32_t>>& groups_at_;
     const std::unordered_map<uint64_t, uint32_t>& owner_;
     const std::vector<int>& part_of_;
+    const std::vector<uint32_t>& group_endpoints_;
     const PartitionLimits& lim_;
 
     std::unordered_set<uint64_t> in_;
@@ -883,6 +891,7 @@ private:
     std::unordered_set<uint64_t> boundary_;      // canon roads leaving the region
     std::vector<Layer> layers_;
     size_t groups_in_ = 0;
+    size_t endpoints_in_ = 0;
     std::priority_queue<QE, std::vector<QE>, std::greater<QE>> pq_;
 };
 
@@ -913,7 +922,14 @@ std::vector<CompletedPartition> compute_isochrone_partitions(
     std::unordered_map<uint64_t, uint32_t> owner;  // node -> partition
     std::vector<int> part_of(n, -1);               // group -> partition
     std::vector<std::vector<uint64_t>> part_nodes;
-    PartitionGrower grower(graph, group_keys, groups_at, owner, part_of, lim);
+
+    // route points a group adds, same as group_endpoints on the JS side:
+    // a dead end group or a single point is 1, otherwise both ends
+    std::vector<uint32_t> group_endpoints(n);
+    for (uint32_t g = 0; g < n; ++g)
+        group_endpoints[g] = (groups[g].dead_end_side != 0 || groups[g].points.size() < 2) ? 1 : 2;
+
+    PartitionGrower grower(graph, group_keys, groups_at, owner, part_of, group_endpoints, lim);
 
     // 2. one candidate per distinct seed, best ratio first
     std::vector<Candidate> pool;
