@@ -510,7 +510,10 @@ PartitionChokePoint make_choke_point(const baldr::GraphId& edge_id,
         return c;
     };
 
-    const float start = std::min(offset_m, total * 0.5f);
+    // an offset pushed out past the partition's own points must stay past them,
+    // only the default offset is kept to the first half of a short edge
+    const float start = offset_m > 10.f ? std::min(offset_m, std::max(total - 1.f, 0.f))
+                                        : std::min(offset_m, total * 0.5f);
     float best_at = start, best_clear = -1.f;
     for (float at = start; at <= total; at += STEP_M) {
         const float c = clearance(cut_shape(shape, at).back());
@@ -1044,8 +1047,7 @@ std::vector<CompletedPartition> compute_isochrone_partitions(
                 auto part = cut_shape(shape, offset);
                 if (part.size() >= 2) result[p].connected_lines.push_back(std::move(part));
             }
-            result[p].chokes.push_back(make_choke_point(arc.edge, reader, costing, offset));
-        }
+            result[p].chokes.push_back(make_choke_point(arc.edge, reader, costing, offset));        }
 
         for (uint64_t v : nodes) {
             for (const auto& a : graph.arcs(v))
