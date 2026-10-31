@@ -15,6 +15,7 @@
 #include <boost/property_tree/ptree.hpp>
 #include <cpp-statsd-client/StatsdClient.hpp>
 
+#include <algorithm>
 #include <sstream>
 #include <unordered_map>
 
@@ -1305,6 +1306,12 @@ void from_json(rapidjson::Document& doc, Options::Action action, Api& api) {
 
   options.set_turn_lanes(rapidjson::get<bool>(doc, "/turn_lanes", options.turn_lanes()));
   options.set_ignore_road_side(rapidjson::get<bool>(doc, "/ignore_road_side", options.ignore_road_side()));
+
+  // group_locations partition size preference, 0 = small .. 1 = big
+  auto partition_ratio = rapidjson::get_optional<float>(doc, "/partition_ratio");
+  if (partition_ratio) {
+    options.set_partition_ratio(std::clamp(*partition_ratio, 0.f, 1.f));
+  }
 
   // whether to include roundabout_exit maneuvers, default true
   auto roundabout_exits =

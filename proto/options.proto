@@ -538,4 +538,7 @@ message Options {
   
   uint32 max_search_locations = 62;
   bool ignore_road_side = 63;
+  oneof has_partition_ratio {
+    float partition_ratio = 64;  // group_locations: 0 prefers small partitions, 1 big ones [default 0.5]
+  }
 }

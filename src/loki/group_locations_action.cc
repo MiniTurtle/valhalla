@@ -703,23 +703,117 @@ void peel_region(std::unordered_set<uint64_t>& region,
     }
 }
 
+// Dijkstra inside `region` from `sources` until a node with stop(k) is
+// settled; the path to it joins `tree`. Returns the path's secs, or -1 when
+// no such node is reachable.
+template <typename Stop>
+double join_path(const std::unordered_set<uint64_t>& region,
+                 const std::vector<uint64_t>& sources,
+                 Stop stop,
+                 std::unordered_set<uint64_t>& tree,
+                 RegionGraph& g) {
+    using QE = std::pair<double, uint64_t>;
+    std::priority_queue<QE, std::vector<QE>, std::greater<QE>> pq;
+    std::unordered_map<uint64_t, double> dist;
+    std::unordered_map<uint64_t, uint64_t> prev;
+    for (uint64_t s : sources)
+        if (dist.emplace(s, 0.0).second) pq.push({0.0, s});
+
+    while (!pq.empty()) {
+        auto [d, v] = pq.top();
+        pq.pop();
+        if (d > dist[v]) continue;
+        if (stop(v)) {
+            for (uint64_t x = v;; x = prev[x]) {
+                tree.insert(x);
+                if (!prev.count(x)) break;
+            }
+            return d;
+        }
+        for (const auto& a : g.arcs(v)) {
+            if (!region.count(a.to)) continue;
+            const double nd = d + a.secs;
+            auto [it, fresh] = dist.try_emplace(a.to, nd);
+            if (!fresh && nd >= it->second) continue;
+            it->second = nd;
+            prev[a.to] = v;
+            pq.push({nd, a.to});
+        }
+    }
+    return -1.0;
+}
+
+// Drive time linking `groups` to each other inside `region` (greedy Steiner
+// tree: grow from the first group, always joining the nearest unlinked one).
+// A group's own anchors are linked by its own roads, already in its drive time.
+double connection_secs(const std::unordered_set<uint64_t>& region,
+                       const std::vector<uint32_t>& groups,
+                       const std::vector<std::vector<uint64_t>>& group_keys,
+                       RegionGraph& g) {
+    if (groups.size() < 2) return 0.0;
+    std::unordered_map<uint64_t, std::vector<uint32_t>> at;  // anchor -> unlinked groups
+    for (size_t i = 1; i < groups.size(); ++i)
+        for (uint64_t k : group_keys[groups[i]]) at[k].push_back(groups[i]);
+
+    std::unordered_set<uint64_t> tree(group_keys[groups[0]].begin(), group_keys[groups[0]].end());
+    std::unordered_set<uint32_t> linked{groups[0]};
+    auto link_touched = [&]() {
+        // every group with an anchor on the tree is linked, its anchors join it
+        bool grew = true;
+        while (grew) {
+            grew = false;
+            for (uint32_t grp : groups) {
+                if (linked.count(grp)) continue;
+                const auto& keys = group_keys[grp];
+                if (std::none_of(keys.begin(), keys.end(), [&](uint64_t k) { return tree.count(k) > 0; }))
+                    continue;
+                linked.insert(grp);
+                tree.insert(keys.begin(), keys.end());
+                grew = true;
+            }
+        }
+    };
+    link_touched();
+
+    double secs = 0.0;
+    while (linked.size() < groups.size()) {
+        const double d = join_path(region, std::vector<uint64_t>(tree.begin(), tree.end()),
+            [&](uint64_t k) {
+                auto it = at.find(k);
+                return it != at.end() && std::any_of(it->second.begin(), it->second.end(),
+                                                     [&](uint32_t grp) { return !linked.count(grp); });
+            },
+            tree, g);
+        if (d < 0.0) break;  // rest is not reachable inside the region
+        secs += d;
+        link_touched();
+    }
+    return secs;
+}
+
 struct PartitionLimits {
     float  max_secs   = 900.f;  // isochrone radius around the seed group
     size_t max_nodes  = 6000;   // hard cap on region size per growth
-    size_t max_endpoints = 40;  // route points a partition holds at most, the exact solve can blow up from ~45 on
     size_t min_groups = 3;      // smaller partitions are not worth the overhead
-    size_t max_chokes = 10;     // sanity cap only; the groups/chokes ratio decides
+    size_t max_chokes = 10;     // sanity cap only; the drive time/chokes score decides
     float  delta_secs = 45.f;   // growth bias: cost of opening one extra boundary road
+    float  size_exp   = 1.f;    // drive time exponent in the score: < 1 prefers small partitions, > 1 big ones
 };
+
+// fewer chokes is always better; size_exp decides how much more drive time is
+// worth. a fully closed region (0 chokes) is the best possible shape
+double partition_score(double secs, size_t chokes, const PartitionLimits& lim) {
+    return std::pow(secs, double(lim.size_exp)) / (chokes == 0 ? 0.5 : double(chokes));
+}
 
 // One growth layer: the region after the first `nodes` insertions, its choke
 // count (= open roads to the rest of the world), the groups it encloses and
-// their route points.
+// their drive time (own roads + the roads connecting them).
 struct Layer {
     size_t nodes;
     size_t chokes;
     size_t groups;
-    size_t endpoints;
+    double secs;
 };
 
 struct Candidate {
@@ -733,7 +827,7 @@ struct Candidate {
 // that close boundary roads instead of opening new ones. Roads without a split
 // (degree <= 2 after dead ends are removed) are swallowed whole, so every
 // boundary road ends right before a split: that is where the choke sits.
-// Every insertion is a layer; the layer with the best groups/chokes ratio wins.
+// Every insertion is a layer; the layer with the best drive time/chokes score wins.
 class PartitionGrower {
 public:
     PartitionGrower(RegionGraph& graph,
@@ -741,10 +835,10 @@ public:
                     const std::unordered_map<uint64_t, std::vector<uint32_t>>& groups_at,
                     const std::unordered_map<uint64_t, uint32_t>& owner,
                     const std::vector<int>& part_of,
-                    const std::vector<uint32_t>& group_endpoints,
+                    const std::vector<float>& group_secs,
                     const PartitionLimits& lim)
     : graph_(graph), group_keys_(group_keys), groups_at_(groups_at),
-      owner_(owner), part_of_(part_of), group_endpoints_(group_endpoints), lim_(lim) {}
+      owner_(owner), part_of_(part_of), group_secs_(group_secs), lim_(lim) {}
 
     Candidate grow(uint32_t seed) {
         reset();
@@ -752,7 +846,7 @@ public:
         record();
 
         while (!pq_.empty()) {
-            if (order_.size() >= lim_.max_nodes || endpoints_in_ > lim_.max_endpoints) break;
+            if (order_.size() >= lim_.max_nodes) break;
             QE cur = pq_.top();
             pq_.pop();
             if (!open(cur.node) || ver_[cur.node] != cur.ver) continue;
@@ -765,9 +859,8 @@ public:
         const Layer* best = nullptr;
         for (const auto& l : layers_) {
             if (l.chokes > lim_.max_chokes) continue;
-            if (l.groups < lim_.min_groups || l.endpoints > lim_.max_endpoints) continue;
-            // a fully closed region (0 chokes) is the best possible shape
-            double s = double(l.groups) / (l.chokes == 0 ? 0.5 : double(l.chokes));
+            if (l.groups < lim_.min_groups) continue;
+            double s = partition_score(l.secs, l.chokes, lim_);
             if (!best || s > c.score) { best = &l; c.score = s; }
         }
         if (!best) return c;
@@ -789,7 +882,14 @@ public:
         }
         peel_region(region, keep, graph_);
         const size_t chokes = boundary_of(region, graph_).size();
-        c.score = double(inside.size()) / (chokes == 0 ? 0.5 : double(chokes));
+        // seed first, the rest in a fixed order so the tree doesn't depend on hashing
+        std::vector<uint32_t> ordered(inside.begin(), inside.end());
+        std::sort(ordered.begin(), ordered.end());
+        auto sit = std::find(ordered.begin(), ordered.end(), seed);
+        if (sit != ordered.end()) std::rotate(ordered.begin(), sit, sit + 1);
+        double secs = connection_secs(region, ordered, group_keys_, graph_);
+        for (uint32_t g : ordered) secs += group_secs_[g];
+        c.score = partition_score(secs, chokes, lim_);
         c.nodes.assign(region.begin(), region.end());
         return c;
     }
@@ -804,7 +904,8 @@ private:
         in_.clear(); order_.clear(); dist_.clear(); ver_.clear();
         hits_.clear(); boundary_.clear(); layers_.clear();
         groups_in_ = 0;
-        endpoints_in_ = 0;
+        secs_in_ = 0.0;
+        tree_.clear();
         pq_ = decltype(pq_)();
     }
 
@@ -834,8 +935,21 @@ private:
         for (uint32_t g : it->second)
             if (part_of_[g] < 0 && ++hits_[g] == group_keys_[g].size()) {
                 ++groups_in_;
-                endpoints_in_ += group_endpoints_[g];
+                secs_in_ += group_secs_[g];
+                link_group(g);
             }
+    }
+
+    // join a group that just got inside to the connection tree by its shortest
+    // path through the region so far, adding that drive time
+    void link_group(uint32_t g) {
+        const auto& keys = group_keys_[g];
+        const bool on_tree = std::any_of(keys.begin(), keys.end(), [&](uint64_t k) { return tree_.count(k) > 0; });
+        if (!tree_.empty() && !on_tree) {
+            const double d = join_path(in_, keys, [&](uint64_t k) { return tree_.count(k) > 0; }, tree_, graph_);
+            if (d > 0.0) secs_in_ += d;
+        }
+        tree_.insert(keys.begin(), keys.end());
     }
 
     // insert v, then follow every split-free road leaving it up to the next split
@@ -868,7 +982,7 @@ private:
     }
 
     void record() {
-        Layer l{order_.size(), boundary_.size(), groups_in_, endpoints_in_};
+        Layer l{order_.size(), boundary_.size(), groups_in_, secs_in_};
         // identical counts on a bigger region add nothing, keep the smaller one
         if (!layers_.empty() && layers_.back().chokes == l.chokes && layers_.back().groups == l.groups)
             return;
@@ -880,7 +994,7 @@ private:
     const std::unordered_map<uint64_t, std::vector<uint32_t>>& groups_at_;
     const std::unordered_map<uint64_t, uint32_t>& owner_;
     const std::vector<int>& part_of_;
-    const std::vector<uint32_t>& group_endpoints_;
+    const std::vector<float>& group_secs_;
     const PartitionLimits& lim_;
 
     std::unordered_set<uint64_t> in_;
@@ -891,19 +1005,91 @@ private:
     std::unordered_set<uint64_t> boundary_;      // canon roads leaving the region
     std::vector<Layer> layers_;
     size_t groups_in_ = 0;
-    size_t endpoints_in_ = 0;
+    double secs_in_ = 0.0;                    // group roads + connections between them
+    std::unordered_set<uint64_t> tree_;       // nodes linking the groups inside
     std::priority_queue<QE, std::vector<QE>, std::greater<QE>> pq_;
 };
+
+// Drive time over a group's own roads: a normal group drives its edge once in
+// the snapped direction, a dead end group drives its whole closed subtree in
+// and back out. Floored at 1 s so a negative size_exp can't blow up the score.
+std::vector<float> group_drive_secs(const std::vector<FinalGroup>& groups,
+                                    const std::shared_ptr<sif::DynamicCost>& costing,
+                                    baldr::GraphReader& reader) {
+    const float FALLBACK_MPS = 30.f / 3.6f;  // edge not drivable either way
+    std::unordered_map<uint64_t, float> cache;
+
+    auto allowed_secs = [&](const baldr::GraphId& eid, float& secs) {
+        if (!eid.Is_Valid()) return false;
+        auto tile = reader.GetGraphTile(eid);
+        const auto* de = tile ? tile->directededge(eid) : nullptr;
+        if (!de || !costing->Allowed(de, tile)) return false;
+        secs = static_cast<float>(costing->EdgeCost(de, tile).secs);
+        return true;
+    };
+    // the edge's own direction if allowed, else the opposing one, else its length
+    auto edge_secs = [&](const baldr::GraphId& eid) {
+        auto it = cache.find(eid.value);
+        if (it != cache.end()) return it->second;
+        float secs = 0.f;
+        if (!allowed_secs(eid, secs) && !allowed_secs(reader.GetOpposingEdgeId(eid), secs)) {
+            auto tile = reader.GetGraphTile(eid);
+            const auto* de = tile ? tile->directededge(eid) : nullptr;
+            secs = de ? static_cast<float>(de->length()) / FALLBACK_MPS : 0.f;
+        }
+        cache[eid.value] = secs;
+        return secs;
+    };
+
+    std::vector<float> out(groups.size(), 0.f);
+    for (size_t g = 0; g < groups.size(); ++g) {
+        const auto& grp = groups[g];
+        if (grp.raw_edges.empty()) { out[g] = 1.f; continue; }
+        const baldr::GraphId root = grp.raw_edges.front();
+        float secs = 0.f;
+        if (grp.dead_end_side == 0) {
+            secs = edge_secs(root);
+        } else {
+            // root is the inward edge of the subtree, walk it like draw_branch
+            std::unordered_set<uint64_t> seen;
+            std::vector<baldr::GraphId> stack{root};
+            for (size_t guard = 0; !stack.empty() && guard < 64; ++guard) {
+                baldr::GraphId e = stack.back();
+                stack.pop_back();
+                if (!seen.insert(get_canonical_edge_val(e, reader, true)).second) continue;
+                const baldr::GraphId back = reader.GetOpposingEdgeId(e);
+                secs += edge_secs(e) + (back.Is_Valid() ? edge_secs(back) : edge_secs(e));
+                auto tile = reader.GetGraphTile(e);
+                const auto* de = tile ? tile->directededge(e) : nullptr;
+                if (!de) continue;
+                baldr::GraphId end = de->endnode();
+                auto end_tile = reader.GetGraphTile(end);
+                const auto* node = end_tile ? end_tile->node(end) : nullptr;
+                if (!node) continue;
+                for (uint32_t i = 0; i < node->edge_count(); ++i) {
+                    baldr::GraphId next(end.tileid(), end.level(), node->edge_index() + i);
+                    if (next != back && is_traversable_edge(end_tile->directededge(next)))
+                        stack.push_back(next);
+                }
+            }
+        }
+        out[g] = std::max(1.f, secs);
+    }
+    return out;
+}
 
 std::vector<CompletedPartition> compute_isochrone_partitions(
     const std::vector<FinalGroup>& groups,
     const std::shared_ptr<sif::DynamicCost>& costing,
-    baldr::GraphReader& reader) {
+    baldr::GraphReader& reader,
+    float partition_ratio) {
 
     const uint32_t n = static_cast<uint32_t>(groups.size());
     if (n == 0) return {};
 
-    const PartitionLimits lim;
+    // ratio 0..1 -> drive time exponent -1..3, 0.5 is the plain time/chokes ratio
+    PartitionLimits lim;
+    lim.size_exp = 4.f * partition_ratio - 1.f;
     RegionGraph graph(reader, costing);
 
     // 1. the open-graph nodes each group hangs off; a group is inside a region
@@ -922,14 +1108,8 @@ std::vector<CompletedPartition> compute_isochrone_partitions(
     std::unordered_map<uint64_t, uint32_t> owner;  // node -> partition
     std::vector<int> part_of(n, -1);               // group -> partition
     std::vector<std::vector<uint64_t>> part_nodes;
-
-    // route points a group adds, same as group_endpoints on the JS side:
-    // a dead end group or a single point is 1, otherwise both ends
-    std::vector<uint32_t> group_endpoints(n);
-    for (uint32_t g = 0; g < n; ++g)
-        group_endpoints[g] = (groups[g].dead_end_side != 0 || groups[g].points.size() < 2) ? 1 : 2;
-
-    PartitionGrower grower(graph, group_keys, groups_at, owner, part_of, group_endpoints, lim);
+    const std::vector<float> group_secs = group_drive_secs(groups, costing, reader);
+    PartitionGrower grower(graph, group_keys, groups_at, owner, part_of, group_secs, lim);
 
     // 2. one candidate per distinct seed, best ratio first
     std::vector<Candidate> pool;
@@ -1109,6 +1289,8 @@ void loki_worker_t::group_locations(Api& request) {
 
     auto& options = *request.mutable_options();
     bool ignore_road_side = options.ignore_road_side();
+    float partition_ratio =
+        options.has_partition_ratio_case() ? options.partition_ratio() : 0.5f;
 
     try {
         const auto locations = baldr::PathLocation::fromPBF(options.locations());
@@ -1122,7 +1304,7 @@ void loki_worker_t::group_locations(Api& request) {
         auto final_groups = merge_dead_end_edge_groups(raw_edge_groups, *reader);
 
         // 3. Compute partitions sequentially via Isochrone Choke-Barrier Map
-        auto partitions = compute_isochrone_partitions(final_groups, costing, *reader);
+        auto partitions = compute_isochrone_partitions(final_groups, costing, *reader, partition_ratio);
 
         // 4. Serialize results to Protobuf
         auto group_locations_res = request.mutable_group_locations();
