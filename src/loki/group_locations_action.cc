@@ -1303,8 +1303,11 @@ void loki_worker_t::group_locations(Api& request) {
         // 2. Merge edge groups belonging to the same dead-end subtree
         auto final_groups = merge_dead_end_edge_groups(raw_edge_groups, *reader);
 
-        // 3. Compute partitions sequentially via Isochrone Choke-Barrier Map
-        auto partitions = compute_isochrone_partitions(final_groups, costing, *reader, partition_ratio);
+        // 3. Compute partitions sequentially via Isochrone Choke-Barrier Map;
+        //    a ratio above 0.99 turns partitioning off
+        std::vector<CompletedPartition> partitions;
+        if (partition_ratio <= 0.99f)
+            partitions = compute_isochrone_partitions(final_groups, costing, *reader, partition_ratio);
 
         // 4. Serialize results to Protobuf
         auto group_locations_res = request.mutable_group_locations();
